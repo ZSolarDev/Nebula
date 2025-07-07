@@ -7,8 +7,6 @@ A 3D renderer for HaxeFlixel
 - [ ] Get proper frustum culling implemented
 ## TODO:
 - [ ] Fix the OBJ Loader
-- [ ] Make a CPU Renderer
-- [ ] Make a CPU Raytracer
 - [ ] Make a GPU Raytracer
 - [ ] Make an FBX Loader
 - [ ] Make a GLTF Loader
