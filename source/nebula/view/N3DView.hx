@@ -339,13 +339,16 @@ class N3DView extends FlxBasic
 			}
 		}
 		if (render)
-			renderView();
+			renderView(elapsed);
 	}
 
-	public function renderView()
+	public function renderView(elapsed:Float)
 	{
 		if (renderer != null)
+		{
+			renderer.update(elapsed);
 			renderer.render();
+		}
 		else
 			Log.warn('A renderer for this N3DView was not provided, failed to render.');
 	}
