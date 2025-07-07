@@ -11,7 +11,8 @@ class FlxCameraRenderer extends FlxCamera implements ViewRenderer
 	{
 		super(0, 0, view.width, view.height);
 		this.view = view;
-		FlxG.cameras.add(this);
+		FlxG.cameras.add(this, false);
+		FlxG.state.add(this);
 	}
 
 	override public function render()
