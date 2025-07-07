@@ -19,7 +19,6 @@ class PlayState extends FlxState
 	{
 		super.create();
 		view = new N3DView(FlxG.width, FlxG.height, FlxCameraRenderer);
-
 		add(view);
 		var part1 = new MeshPart(new Vector<Vector3D>(), new Vector<Int>(), new Vector<Float>(), 'assets/images/breh.png');
 		part1.vertices.push(new Vector3D(-50, -50, 0));
@@ -67,11 +66,11 @@ class PlayState extends FlxState
 	override public function update(elapsed:Float):Void
 	{
 		super.update(elapsed);
-		mesh1.yaw += 0.03 * elapsed * 2;
-		mesh2.yaw -= 0.03 * elapsed * 2;
-		mesh1.pitch += 0.05 * elapsed * 2;
-		mesh2.pitch -= 0.05 * elapsed * 2;
-		mesh1.roll += 0.1 * elapsed * 2;
-		mesh2.roll -= 0.1 * elapsed * 2;
+		// mesh1.yaw += 0.03 * elapsed * 2;
+		// mesh2.yaw -= 0.03 * elapsed * 2;
+		// mesh1.pitch += 0.05 * elapsed * 2;
+		// mesh2.pitch -= 0.05 * elapsed * 2;
+		// mesh1.roll += 0.1 * elapsed * 2;
+		// mesh2.roll -= 0.1 * elapsed * 2;
 	}
 }

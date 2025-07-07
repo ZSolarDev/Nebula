@@ -18,12 +18,15 @@ class MeshPart
 
 	function set_graphic(val:String):String
 	{
-		_graphic = FlxGraphic.fromBitmapData(BitmapData.fromFile(val));
+		this.graphic = val;
 		if (!FileSystem.exists(val))
 		{
 			Log.warn('Failed to load mesh graphic from path: ${val}');
 			_graphic = FlxGraphic.fromBitmapData(FlixelIcon.getIcon());
 		}
+		else
+			_graphic = FlxGraphic.fromBitmapData(BitmapData.fromFile(val));
+
 		return val;
 	}
 

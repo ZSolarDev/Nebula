@@ -11,13 +11,21 @@ class FlxCameraRenderer extends FlxCamera implements ViewRenderer
 	{
 		super(0, 0, view.width, view.height);
 		this.view = view;
-		FlxG.cameras.add(this, false);
+		FlxG.cameras.reset(this);
 		FlxG.state.add(this);
+		bgColor = 0xFF82AEFF;
 	}
 
-	override public function render()
+	override public function render() // Doesnt work when I put drawing code in here, I have to overwrite draw.
 	{
 		super.render();
+	}
+
+	override public function draw()
+	{
+		super.draw();
+		if (!view.render) // Manual check
+			return;
 		var sortedMeshes = view.projectedMeshes.copy();
 		for (i in 0...sortedMeshes.length - 1)
 		{
@@ -38,7 +46,6 @@ class FlxCameraRenderer extends FlxCamera implements ViewRenderer
 			drawTriangles(mesh._graphic, projectedMesh.verts, projectedMesh.indices, projectedMesh.uvt, null, new FlxPoint(meshPos.x, meshPos.y), mesh.blend,
 				mesh.repeat, mesh.smooth);
 		}
-		super.draw(); // draw 2D elements after 3D for things like hud
 	}
 
 	override public function destroy()

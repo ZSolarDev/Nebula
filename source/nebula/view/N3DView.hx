@@ -1,7 +1,6 @@
 package nebula.view;
 
 import flixel.*;
-import flixel.math.FlxPoint;
 import lime.utils.Log;
 import nebula.mesh.*;
 import nebula.view.renderers.ViewRenderer;
