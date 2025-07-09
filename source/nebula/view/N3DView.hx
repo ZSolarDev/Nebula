@@ -326,9 +326,9 @@ class N3DView extends FlxBasic
 
 						pm.verts.push(p[0]);
 						pm.verts.push(p[1]);
-						pm.uvt.push(cv.u);
-						pm.uvt.push(cv.v);
-						pm.uvt.push(1);
+						pm.uvt.push(cv.u * cv.invZ);
+						pm.uvt.push(cv.v * cv.invZ);
+						pm.uvt.push(cv.invZ);
 
 						pm.indices.push(baseIdx + i);
 					}

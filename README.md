@@ -3,8 +3,8 @@ A 3D renderer for HaxeFlixel
 
 ## URGENT:
 - [X] Make N3DView actually produce visual output
+- [X] Get proper frustum culling implemented
 - [ ] Get near/far plane clipping implemented instead of simply regecting triangles close to the camera
-- [ ] Get proper frustum culling implemented
 ## TODO:
 - [ ] Fix the OBJ Loader
 - [ ] Make a GPU Raytracer
