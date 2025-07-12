@@ -1,146 +1,172 @@
 package;
 
 import flixel.*;
+import flixel.util.FlxColor;
+import haxe.Timer;
 import nebula.mesh.*;
-import nebula.mesh.loaders.*;
-import nebula.mesh.savers.*;
 import nebula.view.*;
 import nebula.view.renderers.*;
 import openfl.Vector;
 import openfl.geom.Vector3D;
+import sys.thread.Thread;
 
 class PlayState extends FlxState
 {
-	var mesh1:Mesh;
-	var mesh2:Mesh;
+	var cpuRaytracer:CPURaytracer;
 	var view:N3DView;
 
 	override public function create():Void
 	{
 		super.create();
-		// view = new N3DView(FlxG.width, FlxG.height, FlxCameraRenderer);
-		// add(view);
+		view = new N3DView(FlxG.width, FlxG.height, GPURaytracer);
+		add(view);
+		cpuRaytracer = new CPURaytracer(view);
+		// initializeScene();
+		var part = new MeshPart(new Vector<Vector3D>(), new Vector<Int>(), new Vector<Float>(), '');
+		part.color = 0xFFFFFFFF;
+		part.vertices.push(new Vector3D(-50, -50, 0));
+		part.vertices.push(new Vector3D(50, -50, 0));
+		part.vertices.push(new Vector3D(0, 50, 0));
 
-		var part1 = new MeshPart(new Vector<Vector3D>(), new Vector<Int>(), new Vector<Float>(), 'assets/images/breh.png');
+		part.indices.push(0);
+		part.indices.push(1);
+		part.indices.push(2);
 
-		// Half-size for positioning from center
-		var s = 50;
+		part.uvt.push(0);
+		part.uvt.push(0);
+		part.uvt.push(1);
+		part.uvt.push(0);
+		part.uvt.push(0.5);
+		part.uvt.push(1);
 
-		// Vertices (8 corners of the cube)
-		part1.vertices.push(new Vector3D(-s, -s, -s)); // 0
-		part1.vertices.push(new Vector3D(s, -s, -s)); // 1
-		part1.vertices.push(new Vector3D(s, s, -s)); // 2
-		part1.vertices.push(new Vector3D(-s, s, -s)); // 3
-		part1.vertices.push(new Vector3D(-s, -s, s)); // 4
-		part1.vertices.push(new Vector3D(s, -s, s)); // 5
-		part1.vertices.push(new Vector3D(s, s, s)); // 6
-		part1.vertices.push(new Vector3D(-s, s, s)); // 7
+		var mesh = new Mesh(0, 0, -300, [part]);
+		view.pushMesh(mesh);
+	}
 
-		// Indices (2 triangles per face)
-		var faces = [
-			// Front
-			0,
-			1,
-			2,
-			0,
-			2,
-			3,
-			// Back
-			5,
-			4,
-			7,
-			5,
-			7,
-			6,
-			// Left
-			4,
-			0,
-			3,
-			4,
-			3,
-			7,
-			// Right
-			1,
-			5,
-			6,
-			1,
-			6,
-			2,
-			// Top
-			3,
-			2,
-			6,
-			3,
-			6,
-			7,
-			// Bottom
-			4,
-			5,
-			1,
-			4,
-			1,
-			0
-		];
-		for (i in faces)
-			part1.indices.push(i);
+	function initializeScene()
+	{
+		view.camX = -142.09870267358;
+		view.camY = -186.576563254764;
+		view.camZ = 246.719622723706;
+		view.camPitch = 0.605;
+		view.camYaw = 0.45;
 
-		// UVT (simple planar mapping for now, repeated for each vertex)
-		var uv = [
-			[0, 0], [1, 0], [1, 1], [0, 1], // back/front face UVs
-			[0, 0], [1, 0], [1, 1],                       [0, 1]
-		];
-		for (uvset in uv)
+		var floorParts = createCheckerFloor(8, 40);
+		view.pushMesh(new Mesh(0, 0, 0, floorParts));
+
+		// Spheres
+		var radius = 20;
+		var redSphere = createSphereMesh(-80, -radius, 20, radius, FlxColor.RED, 30, 30);
+		var greenSphere = createSphereMesh(0, -radius, 20, radius, FlxColor.GREEN, 30, 30);
+		var blueSphere = createSphereMesh(80, -radius, 20, radius, FlxColor.BLUE, 30, 30);
+
+		view.pushMesh(new Mesh(0, 0, 1, [redSphere, greenSphere, blueSphere]));
+
+		// Sun sphere
+		var sun = createSphereMesh(0, -150, -150, 30, FlxColor.YELLOW, 30, 30);
+		view.pushMesh(new Mesh(0, 0, 1, [sun]));
+	}
+
+	function createSphereMesh(x:Float, y:Float, z:Float, radius:Float, color:Int, latSteps:Int = 6, lonSteps:Int = 6):MeshPart
+	{
+		var part = new MeshPart(new Vector<Vector3D>(), new Vector<Int>(), new Vector<Float>(), '');
+		part.color = color;
+
+		for (lat in 0...latSteps + 1)
 		{
-			part1.uvt.push(uvset[0]);
-			part1.uvt.push(uvset[1]);
+			var theta = Math.PI * lat / latSteps;
+			var sinTheta = Math.sin(theta);
+			var cosTheta = Math.cos(theta);
+
+			for (lon in 0...lonSteps + 1)
+			{
+				var phi = 2 * Math.PI * lon / lonSteps;
+				var sinPhi = Math.sin(phi);
+				var cosPhi = Math.cos(phi);
+
+				var px = x + radius * sinTheta * cosPhi;
+				var py = y + radius * cosTheta;
+				var pz = z + radius * sinTheta * sinPhi;
+
+				part.vertices.push(new Vector3D(px, py, pz));
+			}
 		}
 
-		mesh1 = new Mesh(0, 0, -200, [part1]);
+		var vertsPerRow = lonSteps + 1;
+		for (lat in 0...latSteps)
+		{
+			for (lon in 0...lonSteps)
+			{
+				var a = lat * vertsPerRow + lon;
+				var b = a + vertsPerRow;
 
-		// view.pushMesh(mesh1);
-		new JsonMeshSaver().saveMesh(mesh1, './mesh.json');
+				part.indices.push(a);
+				part.indices.push(b);
+				part.indices.push(a + 1);
 
-		var part2 = new MeshPart(new Vector<Vector3D>(), new Vector<Int>(), new Vector<Float>(), 'assets/images/minion.jpg');
-		part2.vertices.push(new Vector3D(-50, -50, 0));
-		part2.vertices.push(new Vector3D(50, -50, 0));
-		part2.vertices.push(new Vector3D(0, 50, 0));
+				part.indices.push(b);
+				part.indices.push(b + 1);
+				part.indices.push(a + 1);
+			}
+		}
 
-		part2.indices.push(0);
-		part2.indices.push(1);
-		part2.indices.push(2);
+		return part;
+	}
 
-		part2.uvt.push(0);
-		part2.uvt.push(0);
-		part2.uvt.push(1);
-		part2.uvt.push(0);
-		part2.uvt.push(0.5);
-		part2.uvt.push(1);
+	function createCheckerFloor(size:Int, tileSize:Float):Array<MeshPart>
+	{
+		var parts = [];
+		var half:Int = cast size / 2;
 
-		mesh2 = new Mesh(0, -30, -300, [part2]);
+		for (i in -half...half)
+		{
+			for (j in -half...half)
+			{
+				var x = i * tileSize;
+				var y = j * tileSize;
+				var color = ((i + j) % 2 == 0) ? FlxColor.WHITE : FlxColor.BLACK;
 
-		// view.pushMesh(mesh2);
-		var spr = new FlxSprite().makeGraphic(FlxG.width, FlxG.height, 0xFFFFFFFF);
-		spr.shader = new RayShader();
-		add(spr);
-		// new JsonMeshSaver().saveMesh(mesh2, './mesh2.json');
-		// var font = FlxBitmapFont.fromMonospace('assets/font.png',
-		//	'!"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~•', FlxPoint.get(7, 7), null, FlxPoint.get(0, 0));
-		// var text = new FlxBitmapText(0, 0, 'The Quick Brown Fox Jumps Over The Lazy Dog\nThe Quick Brown Fox Jumps Over The Lazy Dog', font);
-		// text.scale.set(3, 3);
-		// add(text);
-		// var text = new Text({x: 100, y: 20}, 'The Quick Brown Fox Jumps Over The Lazy Dog\nThe Quick Brown Fox Jumps Over The Lazy Dog', 0xFFFFFF,
-		//	{x: 2, y: 2}, 1280, LEFT);
-		// add(text);
+				var part = new MeshPart(new Vector<Vector3D>(), new Vector<Int>(), new Vector<Float>(), '');
+				part.color = color;
+
+				part.vertices.push(new Vector3D(x, 0, y));
+				part.vertices.push(new Vector3D(x + tileSize, 0, y));
+				part.vertices.push(new Vector3D(x + tileSize, 0, y + tileSize));
+				part.vertices.push(new Vector3D(x, 0, y + tileSize));
+
+				// Two triangles
+				part.indices.push(0);
+				part.indices.push(1);
+				part.indices.push(2);
+				part.indices.push(0);
+				part.indices.push(2);
+				part.indices.push(3);
+
+				parts.push(part);
+			}
+		}
+		return parts;
 	}
 
 	override public function update(elapsed:Float):Void
 	{
 		super.update(elapsed);
-		// mesh1.yaw += 0.03 * elapsed * 2;
-		// mesh2.yaw -= 0.03 * elapsed * 2;
-		// mesh1.pitch += 0.05 * elapsed * 2;
-		// mesh2.pitch -= 0.05 * elapsed * 2;
-		// mesh1.roll += 0.1 * elapsed * 2;
-		// mesh2.roll -= 0.1 * elapsed * 2;
+		var threaded = true;
+		if (FlxG.keys.pressed.ENTER)
+		{
+			cpuRaytracer.visible = true;
+			if (threaded)
+				Thread.create(() ->
+				{
+					var start = Timer.stamp();
+					cpuRaytracer.render();
+					var end = Timer.stamp();
+					trace('Render time: ${end - start}');
+				});
+			else
+				cpuRaytracer.render();
+		}
+		if (FlxG.keys.pressed.ESCAPE)
+			cpuRaytracer.visible = false;
 	}
 }

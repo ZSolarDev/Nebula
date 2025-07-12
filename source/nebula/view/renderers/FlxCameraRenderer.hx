@@ -1,11 +1,14 @@
 package nebula.view.renderers;
 
 import flixel.*;
+import flixel.graphics.FlxGraphic;
 import flixel.math.FlxPoint;
+import openfl.display.BitmapData;
 
 class FlxCameraRenderer extends FlxCamera implements ViewRenderer
 {
 	public var view:N3DView;
+	public var bg:FlxSprite;
 
 	public function new(view:N3DView)
 	{
@@ -13,7 +16,8 @@ class FlxCameraRenderer extends FlxCamera implements ViewRenderer
 		this.view = view;
 		FlxG.cameras.reset(this);
 		FlxG.state.add(this);
-		bgColor = 0xFF82AEFF;
+		bg = new FlxSprite(0, 0, FlxGraphic.fromBitmapData(new BitmapData(view.width, view.height, true, 0xFF00D9FF)));
+		bg.camera = this;
 	}
 
 	override public function render() // Doesnt work when I put drawing code in here, I have to overwrite draw.
@@ -24,6 +28,7 @@ class FlxCameraRenderer extends FlxCamera implements ViewRenderer
 	override public function draw()
 	{
 		super.draw();
+		bg.draw();
 		if (!view.render) // Manual check
 			return;
 		var sortedMeshes = view.projectedMeshes.copy();

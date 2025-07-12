@@ -7,14 +7,22 @@ import openfl.display.BitmapData;
 import openfl.display.BlendMode;
 import openfl.geom.Vector3D;
 import sys.FileSystem;
-import sys.io.File;
 
 class MeshPart
 {
 	public var vertices:Vector<Vector3D> = new Vector<Vector3D>();
 	public var indices:Vector<Int> = new Vector<Int>();
 	public var uvt:Vector<Float> = new Vector<Float>();
+	public var useColor:Bool = false;
+	public var color(default, set):Int = 0xFFFFFFFF;
 	public var graphic(default, set):String = '';
+
+	function set_color(val:Int):Int
+	{
+		this.color = val;
+		_graphic = FlxGraphic.fromBitmapData(new BitmapData(1, 1, true, val));
+		return val;
+	}
 
 	function set_graphic(val:String):String
 	{

@@ -7,7 +7,7 @@ A 3D renderer for HaxeFlixel
 - [ ] Get near/far plane clipping implemented instead of simply regecting triangles close to the camera
 ## TODO:
 - [ ] Fix the OBJ Loader
-- [ ] Make a GPU Raytracer
+- [ ] Make a GPU Raytracer (In progress)
 - [ ] Make an FBX Loader
 - [ ] Make a GLTF Loader
 - [ ] Make an MD2 Loader

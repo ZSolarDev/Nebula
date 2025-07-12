@@ -6,6 +6,7 @@ import nebula.mesh.*;
 import nebula.view.renderers.ViewRenderer;
 import openfl.Vector;
 import openfl.geom.Vector3D;
+import sys.thread.Thread;
 
 typedef ClippingVertex =
 {
@@ -13,6 +14,7 @@ typedef ClippingVertex =
 	var u:Float;
 	var v:Float;
 	var invZ:Float;
+	var meshPart:MeshPart;
 }
 
 class N3DView extends FlxBasic
@@ -20,6 +22,7 @@ class N3DView extends FlxBasic
 	public var renderer:ViewRenderer;
 	public var render:Bool = true;
 	public var meshes:Array<Mesh> = [];
+	public var triangles:Array<Array<ClippingVertex>> = [];
 	public var fov:Float;
 	public var nearPlane:Float = 1;
 	public var farPlane:Float = 100000;
@@ -120,6 +123,7 @@ class N3DView extends FlxBasic
 
 	override public function update(elapsed:Float)
 	{
+		triangles = [];
 		super.update(elapsed);
 
 		// --- camera Movement ---
@@ -181,7 +185,7 @@ class N3DView extends FlxBasic
 		if (FlxG.keys.pressed.SHIFT)
 			camY += speed;
 
-		// --- camera Rotation ---
+		// --- camera rotation ---
 		if (FlxG.mouse.pressed)
 		{
 			camYaw += FlxG.mouse.deltaX * 0.005;
@@ -189,7 +193,7 @@ class N3DView extends FlxBasic
 			camPitch = Math.max(Math.min(camPitch, Math.PI / 2), -Math.PI / 2);
 		}
 
-		// --- projection and Clipping ---
+		// --- projection ---
 		projectedMeshes = [];
 
 		for (mesh in meshes)
@@ -209,16 +213,10 @@ class N3DView extends FlxBasic
 				cy /= meshPart.vertices.length;
 				cz /= meshPart.vertices.length;
 
-				// convert center to camera space (similar to what you do per-vertex)
 				var centerWorld = new Vector3D(cx + mesh.x, cy + mesh.y, cz + mesh.z);
-
-				// translate relative to camera
 				var relCenter = new Vector3D(centerWorld.x - camX, centerWorld.y - camY, centerWorld.z - camZ);
-
-				// rotate by inverse camera rotation
 				var camSpaceCenter = applyRotation(relCenter, -camYaw, -camPitch, 0);
 
-				// store camSpaceCenter.z on ProjectionMesh for sorting
 				var pm:ProjectionMesh = {
 					mesh: meshPart,
 					meshPos: new Vector3D(mesh.x, mesh.y, mesh.z),
@@ -228,7 +226,6 @@ class N3DView extends FlxBasic
 					camZ: camSpaceCenter.z
 				};
 
-				// we'll process triangles by indices triplets
 				var indices = meshPart.indices;
 				var verts = meshPart.vertices;
 
@@ -238,7 +235,6 @@ class N3DView extends FlxBasic
 					var idx1 = indices[i * 3 + 1];
 					var idx2 = indices[i * 3 + 2];
 
-					// local vertices relative to mesh center
 					var local0 = new Vector3D(verts[idx0].x - cx, verts[idx0].y - cy, verts[idx0].z - cz);
 					var local1 = new Vector3D(verts[idx1].x - cx, verts[idx1].y - cy, verts[idx1].z - cz);
 					var local2 = new Vector3D(verts[idx2].x - cx, verts[idx2].y - cy, verts[idx2].z - cz);
@@ -287,22 +283,26 @@ class N3DView extends FlxBasic
 						pos: new Vector3D(camSpace0.x, camSpace0.y, camSpace0.z, 1),
 						u: meshPart.uvt[idx0 * 2],
 						v: meshPart.uvt[idx0 * 2 + 1],
-						invZ: 1 / -camSpace0.z // negative z forward, so negate here for correct perspective
+						invZ: 1 / -camSpace0.z,
+						meshPart: meshPart
 					};
 					var v1:ClippingVertex = {
 						pos: new Vector3D(camSpace1.x, camSpace1.y, camSpace1.z, 1),
 						u: meshPart.uvt[idx1 * 2],
 						v: meshPart.uvt[idx1 * 2 + 1],
-						invZ: 1 / -camSpace1.z
+						invZ: 1 / -camSpace1.z,
+						meshPart: meshPart
 					};
 					var v2:ClippingVertex = {
 						pos: new Vector3D(camSpace2.x, camSpace2.y, camSpace2.z, 1),
 						u: meshPart.uvt[idx2 * 2],
 						v: meshPart.uvt[idx2 * 2 + 1],
-						invZ: 1 / -camSpace2.z
+						invZ: 1 / -camSpace2.z,
+						meshPart: meshPart
 					};
 
 					var triangle = [v0, v1, v2];
+					triangles.push(triangle);
 					var skip = false;
 					for (i in 0...3) // URGENT: implement proper vertex clipping
 					{
@@ -326,9 +326,9 @@ class N3DView extends FlxBasic
 
 						pm.verts.push(p[0]);
 						pm.verts.push(p[1]);
-						pm.uvt.push(cv.u * cv.invZ);
-						pm.uvt.push(cv.v * cv.invZ);
-						pm.uvt.push(cv.invZ);
+						pm.uvt.push(cv.u);
+						pm.uvt.push(cv.v);
+						pm.uvt.push(1);
 
 						pm.indices.push(baseIdx + i);
 					}
