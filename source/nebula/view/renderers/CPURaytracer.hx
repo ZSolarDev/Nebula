@@ -15,6 +15,8 @@ typedef Triangle =
 	var pos1:Vector3D;
 	var pos2:Vector3D;
 	var color:Int;
+	var reflectiveness:Float;
+	var lightness:Float;
 }
 
 class CPURaytracer extends FlxSprite implements ViewRenderer
@@ -59,6 +61,20 @@ class CPURaytracer extends FlxSprite implements ViewRenderer
 			return t;
 		else
 			return -1;
+	}
+
+	function multiplyColor(color:Int, factor:Float):Int
+	{
+		var a = (color >> 24) & 0xFF;
+		var r = (color >> 16) & 0xFF;
+		var g = (color >> 8) & 0xFF;
+		var b = color & 0xFF;
+
+		r = cast Math.min(255, Std.int(r * factor));
+		g = cast Math.min(255, Std.int(g * factor));
+		b = cast Math.min(255, Std.int(b * factor));
+
+		return (a << 24) | (r << 16) | (g << 8) | b;
 	}
 
 	function randomHemisphereDirection(normal:Vector3D):Vector3D
@@ -123,7 +139,9 @@ class CPURaytracer extends FlxSprite implements ViewRenderer
 					pos0: tri[0].pos,
 					pos1: tri[1].pos,
 					pos2: tri[2].pos,
-					color: tri[0].meshPart.color
+					color: tri[0].meshPart.color,
+					reflectiveness: tri[0].meshPart.raytracingProperties.reflectiveness,
+					lightness: tri[0].meshPart.raytracingProperties.lightness
 				});
 			}
 
@@ -142,9 +160,11 @@ class CPURaytracer extends FlxSprite implements ViewRenderer
 					var rayDir = normalize(new Vector3D(uvx, uvy, z));
 					var rayPos = new Vector3D(0, 0, 0);
 
-					var finalColor:Int = 0xFF0400FF; // darker blue so I know the difference between rasterized and raytraced
+					var skyColor:Int = 0xFF00D9FF;
 					var hitTri = null;
 					var hitDist = 0.0;
+					var accumulatedColor:Int = skyColor;
+					var accumulatedReflect = 1.0;
 
 					for (bounce in 0...numBounces)
 					{
@@ -163,54 +183,32 @@ class CPURaytracer extends FlxSprite implements ViewRenderer
 
 						if (hitTri == null)
 						{
-							// no hit this bounce, keep final color as blue if first bounce or last bounce
-							if (bounce == 0)
-								finalColor = 0xFF0400FF;
+							accumulatedColor = FlxColor.interpolate(accumulatedColor, skyColor, accumulatedReflect);
 							break;
 						}
 
-						// hit, update final color to this triangle's color
-						if (bounce == 0)
-							finalColor = hitTri.color;
-						else
-							finalColor = FlxColor.interpolate(finalColor, hitTri.color, 0.3);
+						var hitColor = hitTri.color;
+						var reflect = hitTri.reflectiveness;
+
+						accumulatedColor = FlxColor.interpolate(accumulatedColor, hitColor, accumulatedReflect * (1.0 - reflect));
+						accumulatedReflect *= reflect;
+
+						if (accumulatedReflect <= 0.01) // almost no reflection left
+							break;
+
+						// compute new ray direction
 						hitDist = minDist;
-
-						// calculate intersection point
 						var hitPoint = add(rayPos, multiplyScalar(rayDir, hitDist));
-
-						// calculate normal of hit triangle
 						var edge1 = subtract(hitTri.pos1, hitTri.pos0);
 						var edge2 = subtract(hitTri.pos2, hitTri.pos0);
 						var normal = normalize(cross(edge1, edge2));
-
-						// scatter secondary rays around the normal
-						// var numScattered = 4;
-						// var scatterColor = finalColor;
-						//
-						// for (_ in 0...numScattered)
-						// {
-						// var dir = normalize(randomHemisphereDirection(normal));
-						// var origin = add(hitPoint, multiplyScalar(dir, 0.001)); // offset to avoid self-hit
-						//
-						// var colorHit = traceRay(origin, dir);
-						// scatterColor = FlxColor.interpolate(scatterColor, colorHit, 1 / numScattered);
-						// }
-						//
-						// blend in scattered color with final color
-						// finalColor = FlxColor.interpolate(finalColor, scatterColor, 0.25);
-
-						// reflect ray direction (I need to figure out how to make more rays scatter in random directions in a dome around the surface normal and once a ray hits something(if it does) it will slightly effect the color. chatgpt helppp)
 						rayDir = normalize(subtract(rayDir, multiplyScalar(normal, 2 * dot(rayDir, normal))));
-
-						// move ray origin slightly off the surface to avoid self-intersection
 						rayPos = add(hitPoint, multiplyScalar(rayDir, 0.001));
 					}
 
-					pixels.setPixel32(x, y, finalColor);
+					pixels.setPixel32(x, y, accumulatedColor);
 				}
 			}
-			pixels.floodFill(0, 0, 0xFF00D9FF); // fill darker blue with sky blue
 			rendering = false;
 		}
 		catch (e)

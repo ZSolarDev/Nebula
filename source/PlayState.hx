@@ -18,33 +18,15 @@ class PlayState extends FlxState
 	override public function create():Void
 	{
 		super.create();
-		view = new N3DView(FlxG.width, FlxG.height, GPURaytracer);
+		view = new N3DView(FlxG.width, FlxG.height, FlxCameraRenderer);
 		add(view);
 		cpuRaytracer = new CPURaytracer(view);
-		// initializeScene();
-		var part = new MeshPart(new Vector<Vector3D>(), new Vector<Int>(), new Vector<Float>(), '');
-		part.color = 0xFFFFFFFF;
-		part.vertices.push(new Vector3D(-50, -50, 0));
-		part.vertices.push(new Vector3D(50, -50, 0));
-		part.vertices.push(new Vector3D(0, 50, 0));
-
-		part.indices.push(0);
-		part.indices.push(1);
-		part.indices.push(2);
-
-		part.uvt.push(0);
-		part.uvt.push(0);
-		part.uvt.push(1);
-		part.uvt.push(0);
-		part.uvt.push(0.5);
-		part.uvt.push(1);
-
-		var mesh = new Mesh(0, 0, -300, [part]);
-		view.pushMesh(mesh);
+		initializeScene();
 	}
 
 	function initializeScene()
 	{
+		var sphereDetail = 6; // 20 is high, 6 is low
 		view.camX = -142.09870267358;
 		view.camY = -186.576563254764;
 		view.camZ = 246.719622723706;
@@ -56,14 +38,18 @@ class PlayState extends FlxState
 
 		// Spheres
 		var radius = 20;
-		var redSphere = createSphereMesh(-80, -radius, 20, radius, FlxColor.RED, 30, 30);
-		var greenSphere = createSphereMesh(0, -radius, 20, radius, FlxColor.GREEN, 30, 30);
-		var blueSphere = createSphereMesh(80, -radius, 20, radius, FlxColor.BLUE, 30, 30);
+		var redSphere = createSphereMesh(-80, -radius, 20, radius, FlxColor.RED, sphereDetail, sphereDetail);
+		redSphere.raytracingProperties = {reflectiveness: 1, lightness: 0};
+		var greenSphere = createSphereMesh(0, -radius, 20, radius, FlxColor.GREEN, sphereDetail, sphereDetail);
+		greenSphere.raytracingProperties = {reflectiveness: 1, lightness: 0};
+		var blueSphere = createSphereMesh(80, -radius, 20, radius, FlxColor.BLUE, sphereDetail, sphereDetail);
+		blueSphere.raytracingProperties = {reflectiveness: 1, lightness: 0};
 
 		view.pushMesh(new Mesh(0, 0, 1, [redSphere, greenSphere, blueSphere]));
 
 		// Sun sphere
-		var sun = createSphereMesh(0, -150, -150, 30, FlxColor.YELLOW, 30, 30);
+		var sun = createSphereMesh(0, -150, -150, 30, FlxColor.YELLOW, sphereDetail, sphereDetail);
+		sun.raytracingProperties = {reflectiveness: 0, lightness: 1};
 		view.pushMesh(new Mesh(0, 0, 1, [sun]));
 	}
 
@@ -128,6 +114,7 @@ class PlayState extends FlxState
 
 				var part = new MeshPart(new Vector<Vector3D>(), new Vector<Int>(), new Vector<Float>(), '');
 				part.color = color;
+				part.raytracingProperties = {reflectiveness: 0.1, lightness: 0};
 
 				part.vertices.push(new Vector3D(x, 0, y));
 				part.vertices.push(new Vector3D(x + tileSize, 0, y));

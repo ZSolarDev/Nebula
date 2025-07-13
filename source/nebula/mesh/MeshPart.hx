@@ -16,6 +16,7 @@ class MeshPart
 	public var useColor:Bool = false;
 	public var color(default, set):Int = 0xFFFFFFFF;
 	public var graphic(default, set):String = '';
+	public var raytracingProperties:{reflectiveness:Float, lightness:Float};
 
 	function set_color(val:Int):Int
 	{
