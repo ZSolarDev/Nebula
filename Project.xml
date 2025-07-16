@@ -32,6 +32,11 @@
 	<set name="BUILD_DIR" value="export" />
 	<source path="source" />
 	<assets path="assets" />
+    <!-- NebulaTracer -->
+    <assets path="nebulatracer/x64/Release/nebulatracer.hdll" rename="./nebulatracer.hdll"/>
+    <assets path="nebulatracer/x64/Debug/embree4.dll" rename="./embree4.dll"/>
+    <assets path="nebulatracer/x64/Debug/tbb12.dll" rename="./tbb12.dll"/>
+    <assets path="nebulatracer/x64/Debug/tbbmalloc.dll" rename="./tbbmalloc.dll"/>
 
 	<!-- _______________________________ Libraries ______________________________ -->
 

@@ -17,6 +17,13 @@ typedef ClippingVertex =
 	var meshPart:MeshPart;
 }
 
+typedef TransformedMesh =
+{
+	var mesh:MeshPart;
+	var verts:Vector<Float>;
+	var indices:Vector<Int>;
+}
+
 class N3DView extends FlxBasic
 {
 	public var renderer:ViewRenderer;

@@ -1,0 +1,28 @@
+package nebulatracer.native;
+
+import hl.NativeArray;
+import nebulatracer.NebulaTracer.SimpleRay;
+import nebulatracer.RaytracerExt.ExtDynamic;
+
+@:hlNative("nebulatracer")
+class Embree
+{
+	public static function new_embree():Void {}
+
+	public static function dispose_raytracer_embree(id:Int):Void {}
+
+	public static function build_bvh_embree(id:Int):Void {}
+
+	public static function refit_bvh_embree(id:Int):Void {}
+
+	public static function rebuild_bvh_embree(id:Int):Void {}
+
+	public static function load_geometry_embree(string:String, id:Int):Void {}
+
+	public static function trace_ray_embree(id:Int, ray:Dynamic):Dynamic
+		return null;
+
+	public static function set_callback_embree(cb:Dynamic->Void):Void {}
+
+	public static function trace_rays_embree(id:Int, len:Int, rays:NativeArray<Dynamic>):Void {}
+}

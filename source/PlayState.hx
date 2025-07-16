@@ -18,7 +18,7 @@ class PlayState extends FlxState
 	override public function create():Void
 	{
 		super.create();
-		view = new N3DView(FlxG.width, FlxG.height, FlxCameraRenderer);
+		view = new N3DView(FlxG.width, FlxG.height, Raytracer);
 		add(view);
 		cpuRaytracer = new CPURaytracer(view);
 		initializeScene();
