@@ -1,5 +1,6 @@
 package nebulatracer;
 
+import haxe.Timer;
 import openfl.geom.Vector3D;
 
 /**
@@ -178,36 +179,11 @@ class NebulaTracer
 	/**
 	 * Traces a ray.
 	 * @param ray The ray to trace with.
-	 * If you're using the Embree engine, you should use `traceRays` instead. It can actually be faster.
 	 */
 	public function traceRay(ray:Ray):{hit:Bool, geomID:Int}
 	{
 		var simpleRay = NTUtils.simplifyRay(ray);
 		return cast _raytracerExt.traceRay(_ID, simpleRay);
-	}
-
-	/**
-	 * Traces multiple rays. This can actually be faster than tracing a single ray, especially when using Embree.
-	 * @param rays  A map of ray IDs to rays.
-	 */
-	public function traceRays(rays:Map<Int, Ray>, callback:{hit:Bool, geomID:Int, index:Int}->Void)
-	{
-		var simpleRays:Array<Dynamic> = [];
-
-		for (k => ray in rays)
-		{
-			var dyn:Dynamic = {
-				posx: ray.pos.x,
-				posy: ray.pos.y,
-				posz: ray.pos.z,
-				dirx: ray.dir.x,
-				diry: ray.dir.y,
-				dirz: ray.dir.z
-			};
-			simpleRays.push(dyn);
-		}
-
-		_raytracerExt.traceRays(_ID, simpleRays, callback);
 	}
 
 	/**

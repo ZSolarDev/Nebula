@@ -105,138 +105,171 @@ extern "C" void traceRay(int id, SimpleRay* ray, bool* hitOut, unsigned int* geo
     *geomIDOut = rayhit.hit.geomID;
 }
 
-extern "C" void traceRays(int id, SimpleRay* rays, int count, bool* hitOut, unsigned int* geomIDOut) {
-    if (!rays || !hitOut || !geomIDOut) return;
+extern "C" void traceRay4(int id,
+    SimpleRay* ray1, bool* hitOut1, unsigned int* geomIDOut1,
+    SimpleRay* ray2, bool* hitOut2, unsigned int* geomIDOut2,
+    SimpleRay* ray3, bool* hitOut3, unsigned int* geomIDOut3,
+    SimpleRay* ray4, bool* hitOut4, unsigned int* geomIDOut4)
+{
     std::lock_guard<std::mutex> lock(raytracerMutex);
     if (!raytracers.count(id)) return;
 
     RaytracerInstance* instance = raytracers[id];
-    int processed = 0;
-    while (processed < count) {
-        int remaining = count - processed;
-        int batchSize = 1;
 
-        if (remaining >= 16) batchSize = 16;
-        else if (remaining >= 8) batchSize = 8;
-        else if (remaining >= 4) batchSize = 4;
+    RTCRayHit4 rayhit4 = {};
+    SimpleRay* rays[] = {
+        ray1, ray2, ray3, ray4
+    };
+    for (int i = 0; i < 4; i++) {
+        rayhit4.ray.dir_x[i] = rays[i]->dirx;
+        rayhit4.ray.dir_y[i] = rays[i]->diry;
+        rayhit4.ray.dir_z[i] = rays[i]->dirz;
+        rayhit4.ray.org_x[i] = rays[i]->posx;
+        rayhit4.ray.org_y[i] = rays[i]->posy;
+        rayhit4.ray.org_z[i] = rays[i]->posz;
+        rayhit4.ray.tnear[i] = 0.0f;
+        rayhit4.ray.tfar[i] = INFINITY;
+        rayhit4.ray.time[i] = 0.0f;
+        rayhit4.ray.mask[i] = -1;
+        rayhit4.ray.id[i] = 0;
+        rayhit4.ray.flags[i] = 0;
+        rayhit4.hit.geomID[i] = RTC_INVALID_GEOMETRY_ID;
+        rayhit4.hit.primID[i] = RTC_INVALID_GEOMETRY_ID;
+        rayhit4.hit.instID[0][i] = RTC_INVALID_GEOMETRY_ID;
+    }
 
-        if (batchSize == 1) {
-            RTCRayHit rayhit = {};
-            SimpleRay* ray = &rays[processed];
+    int valid4[4] = {
+        -1, -1, -1, -1
+    };
+    rtcIntersect4(valid4, instance->scene, &rayhit4);
 
-            rayhit.ray.org_x = ray->posx;
-            rayhit.ray.org_y = ray->posy;
-            rayhit.ray.org_z = ray->posz;
-            rayhit.ray.dir_x = ray->dirx;
-            rayhit.ray.dir_y = ray->diry;
-            rayhit.ray.dir_z = ray->dirz;
-            rayhit.ray.tnear = 0.0f;
-            rayhit.ray.tfar = INFINITY;
-            rayhit.ray.time = 0.0f;
-            rayhit.ray.mask = -1;
-            rayhit.ray.id = 0;
-            rayhit.ray.flags = 0;
-
-            rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
-            rayhit.hit.primID = RTC_INVALID_GEOMETRY_ID;
-            rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
-
-            rtcIntersect1(instance->scene, &rayhit);
-
-            hitOut[processed] = rayhit.hit.geomID != RTC_INVALID_GEOMETRY_ID;
-            geomIDOut[processed] = rayhit.hit.geomID;
-
-            processed += 1;
-        }
-        else if (batchSize == 4) {
-            RTCRayHit4 rayhits = {};
-            for (int i = 0; i < 4; i++) {
-                SimpleRay* ray = &rays[processed + i];
-                rayhits.ray.org_x[i] = ray->posx;
-                rayhits.ray.org_y[i] = ray->posy;
-                rayhits.ray.org_z[i] = ray->posz;
-                rayhits.ray.dir_x[i] = ray->dirx;
-                rayhits.ray.dir_y[i] = ray->diry;
-                rayhits.ray.dir_z[i] = ray->dirz;
-                rayhits.ray.tnear[i] = 0.0f;
-                rayhits.ray.tfar[i] = INFINITY;
-                rayhits.ray.time[i] = 0.0f;
-                rayhits.ray.mask[i] = -1;
-                rayhits.ray.id[i] = 0;
-                rayhits.ray.flags[i] = 0;
-
-                rayhits.hit.geomID[i] = RTC_INVALID_GEOMETRY_ID;
-                rayhits.hit.primID[i] = RTC_INVALID_GEOMETRY_ID;
-                rayhits.hit.instID[0][i] = RTC_INVALID_GEOMETRY_ID;
-            }
-            int validMask = 0b1111;
-            rtcIntersect4(&validMask, instance->scene, (RTCRayHit4*)&rayhits, nullptr);
-            for (int i = 0; i < 4; i++) {
-                hitOut[processed + i] = rayhits.hit.geomID[i] != RTC_INVALID_GEOMETRY_ID;
-                geomIDOut[processed + i] = rayhits.hit.geomID[i];
-            }
-            processed += 4;
-        }
-        else if (batchSize == 8) {
-            RTCRayHit8 rayhits = {};
-            for (int i = 0; i < 8; i++) {
-                SimpleRay* ray = &rays[processed + i];
-                rayhits.ray.org_x[i] = ray->posx;
-                rayhits.ray.org_y[i] = ray->posy;
-                rayhits.ray.org_z[i] = ray->posz;
-                rayhits.ray.dir_x[i] = ray->dirx;
-                rayhits.ray.dir_y[i] = ray->diry;
-                rayhits.ray.dir_z[i] = ray->dirz;
-                rayhits.ray.tnear[i] = 0.0f;
-                rayhits.ray.tfar[i] = INFINITY;
-                rayhits.ray.time[i] = 0.0f;
-                rayhits.ray.mask[i] = -1;
-                rayhits.ray.id[i] = 0;
-                rayhits.ray.flags[i] = 0;
-
-                rayhits.hit.geomID[i] = RTC_INVALID_GEOMETRY_ID;
-                rayhits.hit.primID[i] = RTC_INVALID_GEOMETRY_ID;
-                rayhits.hit.instID[0][i] = RTC_INVALID_GEOMETRY_ID;
-            }
-            int validMask = 0xFF;
-            rtcIntersect8(&validMask, instance->scene, (RTCRayHit8*)&rayhits, nullptr);
-            for (int i = 0; i < 8; i++) {
-                hitOut[processed + i] = rayhits.hit.geomID[i] != RTC_INVALID_GEOMETRY_ID;
-                geomIDOut[processed + i] = rayhits.hit.geomID[i];
-            }
-            processed += 8;
-        }
-        else if (batchSize == 16) {
-            RTCRayHit16 rayhits = {};
-            for (int i = 0; i < 16; i++) {
-                SimpleRay* ray = &rays[processed + i];
-                rayhits.ray.org_x[i] = ray->posx;
-                rayhits.ray.org_y[i] = ray->posy;
-                rayhits.ray.org_z[i] = ray->posz;
-                rayhits.ray.dir_x[i] = ray->dirx;
-                rayhits.ray.dir_y[i] = ray->diry;
-                rayhits.ray.dir_z[i] = ray->dirz;
-                rayhits.ray.tnear[i] = 0.0f;
-                rayhits.ray.tfar[i] = INFINITY;
-                rayhits.ray.time[i] = 0.0f;
-                rayhits.ray.mask[i] = -1;
-                rayhits.ray.id[i] = 0;
-                rayhits.ray.flags[i] = 0;
-
-                rayhits.hit.geomID[i] = RTC_INVALID_GEOMETRY_ID;
-                rayhits.hit.primID[i] = RTC_INVALID_GEOMETRY_ID;
-                rayhits.hit.instID[0][i] = RTC_INVALID_GEOMETRY_ID;
-            }
-            int validMask = 0xFFFF;
-            rtcIntersect16(&validMask, instance->scene, (RTCRayHit16*)&rayhits, nullptr);
-            for (int i = 0; i < 16; i++) {
-                hitOut[processed + i] = rayhits.hit.geomID[i] != RTC_INVALID_GEOMETRY_ID;
-                geomIDOut[processed + i] = rayhits.hit.geomID[i];
-            }
-            processed += 16;
-        }
+    bool* hits[] = {
+        hitOut1, hitOut2, hitOut3, hitOut4
+    };
+    unsigned int* geomIDs[] = {
+        geomIDOut1, geomIDOut2, geomIDOut3, geomIDOut4
+    };
+    for (int i = 0; i < 4; i++) {
+        *hits[i] = rayhit4.hit.geomID[i] != RTC_INVALID_GEOMETRY_ID;
+        *geomIDs[i] = rayhit4.hit.geomID[i];
     }
 }
+
+extern "C" void traceRay8(int id,
+    SimpleRay* ray1, bool* hitOut1, unsigned int* geomIDOut1,
+    SimpleRay* ray2, bool* hitOut2, unsigned int* geomIDOut2,
+    SimpleRay* ray3, bool* hitOut3, unsigned int* geomIDOut3,
+    SimpleRay* ray4, bool* hitOut4, unsigned int* geomIDOut4,
+    SimpleRay* ray5, bool* hitOut5, unsigned int* geomIDOut5,
+    SimpleRay* ray6, bool* hitOut6, unsigned int* geomIDOut6,
+    SimpleRay* ray7, bool* hitOut7, unsigned int* geomIDOut7,
+    SimpleRay* ray8, bool* hitOut8, unsigned int* geomIDOut8)
+{
+    std::lock_guard<std::mutex> lock(raytracerMutex);
+    if (!raytracers.count(id)) return;
+
+    RaytracerInstance* instance = raytracers[id];
+
+    RTCRayHit8 rayhit8 = {};
+    SimpleRay* rays[] = { ray1, ray2, ray3, ray4, ray5, ray6, ray7, ray8 };
+    for (int i = 0; i < 8; i++) {
+        rayhit8.ray.dir_x[i] = rays[i]->dirx;
+        rayhit8.ray.dir_y[i] = rays[i]->diry;
+        rayhit8.ray.dir_z[i] = rays[i]->dirz;
+        rayhit8.ray.org_x[i] = rays[i]->posx;
+        rayhit8.ray.org_y[i] = rays[i]->posy;
+        rayhit8.ray.org_z[i] = rays[i]->posz;
+        rayhit8.ray.tnear[i] = 0.0f;
+        rayhit8.ray.tfar[i] = INFINITY;
+        rayhit8.ray.time[i] = 0.0f;
+        rayhit8.ray.mask[i] = -1;
+        rayhit8.ray.id[i] = 0;
+        rayhit8.ray.flags[i] = 0;
+        rayhit8.hit.geomID[i] = RTC_INVALID_GEOMETRY_ID;
+        rayhit8.hit.primID[i] = RTC_INVALID_GEOMETRY_ID;
+        rayhit8.hit.instID[0][i] = RTC_INVALID_GEOMETRY_ID;
+    }
+
+    int valid8[8] = { -1,-1,-1,-1,-1,-1,-1,-1 };
+    rtcIntersect8(valid8, instance->scene, &rayhit8);
+
+    bool* hits[] = { hitOut1, hitOut2, hitOut3, hitOut4, hitOut5, hitOut6, hitOut7, hitOut8 };
+    unsigned int* geomIDs[] = { geomIDOut1, geomIDOut2, geomIDOut3, geomIDOut4, geomIDOut5, geomIDOut6, geomIDOut7, geomIDOut8 };
+    for (int i = 0; i < 8; i++) {
+        *hits[i] = rayhit8.hit.geomID[i] != RTC_INVALID_GEOMETRY_ID;
+        *geomIDs[i] = rayhit8.hit.geomID[i];
+    }
+}
+
+extern "C" void traceRay16(int id,
+    SimpleRay* ray1, bool* hitOut1, unsigned int* geomIDOut1,
+    SimpleRay* ray2, bool* hitOut2, unsigned int* geomIDOut2,
+    SimpleRay* ray3, bool* hitOut3, unsigned int* geomIDOut3,
+    SimpleRay* ray4, bool* hitOut4, unsigned int* geomIDOut4,
+    SimpleRay* ray5, bool* hitOut5, unsigned int* geomIDOut5,
+    SimpleRay* ray6, bool* hitOut6, unsigned int* geomIDOut6,
+    SimpleRay* ray7, bool* hitOut7, unsigned int* geomIDOut7,
+    SimpleRay* ray8, bool* hitOut8, unsigned int* geomIDOut8,
+    SimpleRay* ray9, bool* hitOut9, unsigned int* geomIDOut9,
+    SimpleRay* ray10, bool* hitOut10, unsigned int* geomIDOut10,
+    SimpleRay* ray11, bool* hitOut11, unsigned int* geomIDOut11,
+    SimpleRay* ray12, bool* hitOut12, unsigned int* geomIDOut12,
+    SimpleRay* ray13, bool* hitOut13, unsigned int* geomIDOut13,
+    SimpleRay* ray14, bool* hitOut14, unsigned int* geomIDOut14,
+    SimpleRay* ray15, bool* hitOut15, unsigned int* geomIDOut15,
+    SimpleRay* ray16, bool* hitOut16, unsigned int* geomIDOut16,
+    int valid1, int valid2, int valid3, int valid4, int valid5, int valid6,
+    int valid7, int valid8, int valid9, int valid10, int valid11, int valid12,
+    int valid13, int valid14, int valid15, int valid16)
+{
+    std::lock_guard<std::mutex> lock(raytracerMutex);
+    if (!raytracers.count(id)) return;
+
+    RaytracerInstance* instance = raytracers[id];
+
+    RTCRayHit16 rayhit16 = {};
+    SimpleRay* rays[] = {
+        ray1, ray2, ray3, ray4, ray5, ray6, ray7, ray8,
+        ray9, ray10, ray11, ray12, ray13, ray14, ray15, ray16
+    };
+    for (int i = 0; i < 16; i++) {
+        rayhit16.ray.dir_x[i] = rays[i]->dirx;
+        rayhit16.ray.dir_y[i] = rays[i]->diry;
+        rayhit16.ray.dir_z[i] = rays[i]->dirz;
+        rayhit16.ray.org_x[i] = rays[i]->posx;
+        rayhit16.ray.org_y[i] = rays[i]->posy;
+        rayhit16.ray.org_z[i] = rays[i]->posz;
+        rayhit16.ray.tnear[i] = 0.0f;
+        rayhit16.ray.tfar[i] = INFINITY;
+        rayhit16.ray.time[i] = 0.0f;
+        rayhit16.ray.mask[i] = -1;
+        rayhit16.ray.id[i] = 0;
+        rayhit16.ray.flags[i] = 0;
+        rayhit16.hit.geomID[i] = RTC_INVALID_GEOMETRY_ID;
+        rayhit16.hit.primID[i] = RTC_INVALID_GEOMETRY_ID;
+        rayhit16.hit.instID[0][i] = RTC_INVALID_GEOMETRY_ID;
+    }
+
+    int validMask[16] = {
+        valid1, valid2, valid3, valid4, valid5, valid6, valid7, valid8,
+        valid9, valid10, valid11, valid12, valid13, valid14, valid15, valid16
+    };
+    rtcIntersect16(validMask, instance->scene, &rayhit16);
+
+    bool* hits[] = {
+        hitOut1, hitOut2, hitOut3, hitOut4, hitOut5, hitOut6, hitOut7, hitOut8,
+        hitOut9, hitOut10, hitOut11, hitOut12, hitOut13, hitOut14, hitOut15, hitOut16
+    };
+    unsigned int* geomIDs[] = {
+        geomIDOut1, geomIDOut2, geomIDOut3, geomIDOut4, geomIDOut5, geomIDOut6, geomIDOut7, geomIDOut8,
+        geomIDOut9, geomIDOut10, geomIDOut11, geomIDOut12, geomIDOut13, geomIDOut14, geomIDOut15, geomIDOut16
+    };
+    for (int i = 0; i < 16; i++) {
+        *hits[i] = rayhit16.hit.geomID[i] != RTC_INVALID_GEOMETRY_ID;
+        *geomIDs[i] = rayhit16.hit.geomID[i];
+    }
+}
+
 
 void loadGeometry(const char* json, int id) {
     JSON_Value* rootVal = json_parse_string(json);
@@ -363,54 +396,125 @@ HL_PRIM vdynamic* HL_NAME(trace_ray_embree)(int id, vdynamic* _ray) {
 }
 DEFINE_PRIM(_DYN, trace_ray_embree, _I32 _DYN);
 
-static vclosure* stored_callback = nullptr;
+HL_PRIM vdynamic* HL_NAME(trace_rays4_embree)(int id, vdynamic* _r1, vdynamic* _r2, vdynamic* _r3, vdynamic* _r4) {
+    SimpleRay rays[4];
+    vdynamic* raysIn[4] = { _r1, _r2, _r3, _r4 };
+    for (int i = 0; i < 4; i++) {
+        vdynamic* r = raysIn[i];
+        rays[i] = {
+            .posx = (float)hl_dyn_getd(r, hl_hash_utf8("posx")),
+            .posy = (float)hl_dyn_getd(r, hl_hash_utf8("posy")),
+            .posz = (float)hl_dyn_getd(r, hl_hash_utf8("posz")),
+            .dirx = (float)hl_dyn_getd(r, hl_hash_utf8("dirx")),
+            .diry = (float)hl_dyn_getd(r, hl_hash_utf8("diry")),
+            .dirz = (float)hl_dyn_getd(r, hl_hash_utf8("dirz"))
+        };
+    }
 
-HL_PRIM void HL_NAME(set_callback_embree)(vclosure* cb) {
-    if (stored_callback) hl_remove_root(&stored_callback);
-    stored_callback = cb;
-    if (stored_callback) hl_add_root(&stored_callback);
-}
-DEFINE_PRIM(_VOID, set_callback_embree, _FUN(_VOID, _DYN));
+    bool hits[4] = {};
+    unsigned int geomIDs[4] = {};
 
-
-void call_callback(int i, bool hit, unsigned int geomID) {
-    if (!stored_callback) return;
+    traceRay4(id, &rays[0], &hits[0], &geomIDs[0], &rays[1], &hits[1], &geomIDs[1],
+        &rays[2], &hits[2], &geomIDs[2], &rays[3], &hits[3], &geomIDs[3]);
 
     vdynamic* result = (vdynamic*)hl_alloc_dynobj();
-    hl_dyn_seti(result, hl_hash_utf8("hit"), &hlt_bool, hit);
-    hl_dyn_seti(result, hl_hash_utf8("geomID"), &hlt_i32, geomID);
-    hl_dyn_seti(result, hl_hash_utf8("index"), &hlt_i32, i);
-
-    vdynamic* args[1] = { result };
-    hl_dyn_call(stored_callback, args, 1);
+    for (int i = 0; i < 4; i++) {
+        char nameHit[8], nameID[10];
+        sprintf(nameHit, "hit%d", i + 1);
+        sprintf(nameID, "geomID%d", i + 1);
+        hl_dyn_seti(result, hl_hash_utf8(nameHit), &hlt_bool, hits[i]);
+        hl_dyn_seti(result, hl_hash_utf8(nameID), &hlt_i32, geomIDs[i]);
+    }
+    return result;
 }
+DEFINE_PRIM(_DYN, trace_rays4_embree, _I32 _DYN _DYN _DYN _DYN);
 
-HL_PRIM void HL_NAME(trace_rays_embree)(int id, int len, varray* _rays) {
-    SimpleRay* rays = new SimpleRay[len];
-    for (int i = 0; i < len; i++) {
-        vdynamic** rayArray = hl_aptr(_rays, vdynamic*);
-        vdynamic* rayDyn = rayArray[i];
-        SimpleRay ray = {};
-        ray.posx = (float)hl_dyn_getd(rayDyn, hl_hash_utf8("posx"));
-        ray.posy = (float)hl_dyn_getd(rayDyn, hl_hash_utf8("posy"));
-        ray.posz = (float)hl_dyn_getd(rayDyn, hl_hash_utf8("posz"));
-        ray.dirx = (float)hl_dyn_getd(rayDyn, hl_hash_utf8("dirx"));
-        ray.diry = (float)hl_dyn_getd(rayDyn, hl_hash_utf8("diry"));
-        ray.dirz = (float)hl_dyn_getd(rayDyn, hl_hash_utf8("dirz"));
-
-        rays[i] = ray;
+HL_PRIM vdynamic* HL_NAME(trace_rays8_embree)(int id, vdynamic* _r1, vdynamic* _r2, vdynamic* _r3, vdynamic* _r4, vdynamic* _r5, vdynamic* _r6, vdynamic* _r7, vdynamic* _r8) {
+    SimpleRay rays[8];
+    vdynamic* raysIn[8] = { _r1, _r2, _r3, _r4, _r5, _r6, _r7, _r8 };
+    for (int i = 0; i < 8; i++) {
+        vdynamic* r = raysIn[i];
+        rays[i] = {
+            .posx = (float)hl_dyn_getd(r, hl_hash_utf8("posx")),
+            .posy = (float)hl_dyn_getd(r, hl_hash_utf8("posy")),
+            .posz = (float)hl_dyn_getd(r, hl_hash_utf8("posz")),
+            .dirx = (float)hl_dyn_getd(r, hl_hash_utf8("dirx")),
+            .diry = (float)hl_dyn_getd(r, hl_hash_utf8("diry")),
+            .dirz = (float)hl_dyn_getd(r, hl_hash_utf8("dirz"))
+        };
     }
 
-    bool* hit = new bool[len];
-    unsigned int* geomID = new unsigned int[len];
-    traceRays(id, rays, len, hit, geomID);
+    bool hits[8] = {};
+    unsigned int geomIDs[8] = {};
 
-    for (int i = 0; i < len; i++) {
-        call_callback(i, hit[i], geomID[i]);
+    traceRay8(id, &rays[0], &hits[0], &geomIDs[0], &rays[1], &hits[1], &geomIDs[1],
+        &rays[2], &hits[2], &geomIDs[2], &rays[3], &hits[3], &geomIDs[3],
+        &rays[4], &hits[4], &geomIDs[4], &rays[5], &hits[5], &geomIDs[5],
+        &rays[6], &hits[6], &geomIDs[6], &rays[7], &hits[7], &geomIDs[7]);
+
+    vdynamic* result = (vdynamic*)hl_alloc_dynobj();
+    for (int i = 0; i < 8; i++) {
+        char nameHit[8], nameID[10];
+        sprintf(nameHit, "hit%d", i + 1);
+        sprintf(nameID, "geomID%d", i + 1);
+        hl_dyn_seti(result, hl_hash_utf8(nameHit), &hlt_bool, hits[i]);
+        hl_dyn_seti(result, hl_hash_utf8(nameID), &hlt_i32, geomIDs[i]);
+    }
+    return result;
+}
+DEFINE_PRIM(_DYN, trace_rays8_embree, _I32 _DYN _DYN _DYN _DYN _DYN _DYN _DYN _DYN);
+
+HL_PRIM vdynamic* HL_NAME(trace_rays16_embree)(int id,
+    vdynamic* _r1, vdynamic* _r2, vdynamic* _r3, vdynamic* _r4,
+    vdynamic* _r5, vdynamic* _r6, vdynamic* _r7, vdynamic* _r8,
+    vdynamic* _r9, vdynamic* _r10, vdynamic* _r11, vdynamic* _r12,
+    vdynamic* _r13, vdynamic* _r14, vdynamic* _r15, vdynamic* _r16, 
+    int valid1, int valid2, int valid3, int valid4, int valid5, int valid6,
+    int valid7, int valid8, int valid9, int valid10, int valid11, int valid12,
+    int valid13, int valid14, int valid15, int valid16) {
+
+    SimpleRay rays[16];
+    vdynamic* raysIn[16] = { _r1, _r2, _r3, _r4, _r5, _r6, _r7, _r8, _r9, _r10, _r11, _r12, _r13, _r14, _r15, _r16 };
+    for (int i = 0; i < 16; i++) {
+        vdynamic* r = raysIn[i];
+        rays[i] = {
+            .posx = (float)hl_dyn_getd(r, hl_hash_utf8("posx")),
+            .posy = (float)hl_dyn_getd(r, hl_hash_utf8("posy")),
+            .posz = (float)hl_dyn_getd(r, hl_hash_utf8("posz")),
+            .dirx = (float)hl_dyn_getd(r, hl_hash_utf8("dirx")),
+            .diry = (float)hl_dyn_getd(r, hl_hash_utf8("diry")),
+            .dirz = (float)hl_dyn_getd(r, hl_hash_utf8("dirz"))
+        };
     }
 
-    delete[] rays;
-    delete[] hit;
-    delete[] geomID;
+    bool hits[16] = {};
+    unsigned int geomIDs[16] = {};
+
+    traceRay16(id,
+        &rays[0], &hits[0], &geomIDs[0], &rays[1], &hits[1], &geomIDs[1],
+        &rays[2], &hits[2], &geomIDs[2], &rays[3], &hits[3], &geomIDs[3],
+        &rays[4], &hits[4], &geomIDs[4], &rays[5], &hits[5], &geomIDs[5],
+        &rays[6], &hits[6], &geomIDs[6], &rays[7], &hits[7], &geomIDs[7],
+        &rays[8], &hits[8], &geomIDs[8], &rays[9], &hits[9], &geomIDs[9],
+        &rays[10], &hits[10], &geomIDs[10], &rays[11], &hits[11], &geomIDs[11],
+        &rays[12], &hits[12], &geomIDs[12], &rays[13], &hits[13], &geomIDs[13],
+        &rays[14], &hits[14], &geomIDs[14], &rays[15], &hits[15], &geomIDs[15], 
+        valid1, valid2, valid3, valid4, valid5, valid6, valid7, valid8, valid9,
+        valid10, valid11, valid12, valid13, valid14, valid15, valid16);
+
+    vdynamic* result = (vdynamic*)hl_alloc_dynobj();
+    for (int i = 0; i < 16; i++) {
+        char nameHit[8], nameID[10];
+        sprintf(nameHit, "hit%d", i + 1);
+        sprintf(nameID, "geomID%d", i + 1);
+        hl_dyn_seti(result, hl_hash_utf8(nameHit), &hlt_bool, hits[i]);
+        hl_dyn_seti(result, hl_hash_utf8(nameID), &hlt_i32, geomIDs[i]);
+    }
+    return result;
 }
-DEFINE_PRIM(_VOID, trace_rays_embree, _I32 _I32 _ARR);
+DEFINE_PRIM(_DYN, trace_rays16_embree, _I32
+    _DYN _DYN _DYN _DYN _DYN _DYN _DYN _DYN
+    _DYN _DYN _DYN _DYN _DYN _DYN _DYN _DYN
+    _I32 _I32 _I32 _I32 _I32 _I32 _I32 _I32
+    _I32 _I32 _I32 _I32 _I32 _I32 _I32 _I32
+);

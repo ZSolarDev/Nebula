@@ -2,6 +2,7 @@ package nebula.view.renderers;
 
 import flixel.*;
 import haxe.Json;
+import hlwnative.HLApplicationStatus;
 import lime.math.Vector2;
 import lime.utils.Log;
 import nebula.mesh.MeshPart;
@@ -9,6 +10,8 @@ import nebulatracer.NebulaTracer.NTracerEngine;
 import nebulatracer.NebulaTracer;
 import openfl.geom.Rectangle;
 import openfl.geom.Vector3D;
+import sys.thread.Mutex;
+import sys.thread.Thread;
 
 typedef Geometry =
 {
@@ -182,8 +185,13 @@ class Raytracer implements ViewRenderer extends FlxSprite
 		return out;
 	}
 
+	var rendering = false;
+
 	public function render()
 	{
+		if (rendering)
+			return;
+		rendering = true;
 		geom = [];
 		pixels.fillRect(new Rectangle(0, 0, view.width, view.height), 0x00000000);
 
@@ -226,22 +234,7 @@ class Raytracer implements ViewRenderer extends FlxSprite
 		if (prevGeoms.length < 20)
 			prevGeoms.push(deepCopyGeom(geom));
 
-		// TODO: Fix this Once OptiX and DXR are implemented
-		// var rays:Array<{ray:Ray, screenPos:Vector2}> = [];
-		// var rayMap:Map<Int, Ray> = new Map();
-		// for (y in 0...view.height)
-		// for (x in 0...view.width)
-		// rays.push({ray: pixelToWorld(x, y), screenPos: new Vector2(x, y)});
-		// for (i in 0...rays.length)
-		// rayMap.set(i, rays[i].ray);
-		// raytracer.traceRays(rayMap, (res) ->
-		// {
-		// var ray = rays[res.index];
-		// if (res.hit)
-		// pixels.setPixel32(cast ray.screenPos.x, cast ray.screenPos.y, geom[res.geomID].color);
-		// else
-		// pixels.setPixel32(cast ray.screenPos.x, cast ray.screenPos.y, 0xFF00D9FF);
-		// });
+		var renderersComplete = 0;
 		for (y in 0...view.height)
 		{
 			for (x in 0...view.width)
@@ -258,6 +251,84 @@ class Raytracer implements ViewRenderer extends FlxSprite
 					pixels.setPixel32(cast x, cast y, 0xFF00D9FF);
 				}
 			}
+		}
+		rendering = false;
+	}
+}
+
+class RayteacerThreaded
+{
+	// This is the first time i've used a mutex
+	public var mutex = new Mutex();
+	public var numThreads:Int = cast HLApplicationStatus.getTotalThreads();
+	public var threadBatches:Array<Array<
+		{
+			startPosX:Int,
+			endPosX:Int,
+			startPosY:Int,
+			endPosY:Int
+		}>> = [];
+	public var parent:Raytracer;
+	public var sets:Array<
+		{
+			startPosX:Int,
+			endPosX:Int,
+			startPosY:Int,
+			endPosY:Int
+		}> = [];
+	public var output:Array<Array<{ray:Ray, screenPos:Vector2}>> = [];
+	public var completed:Bool = false;
+
+	public function new(parent:Raytracer, sets:Array<
+		{
+			startPosX:Int,
+			endPosX:Int,
+			startPosY:Int,
+			endPosY:Int
+		}>)
+	{
+		this.parent = parent;
+		this.sets = sets;
+
+		for (_ in 0...numThreads)
+			threadBatches.push([]);
+	}
+
+	public function runBatches()
+	{
+		// distribute sample sets across threads using wraparound
+		for (i in 0...sets.length)
+		{
+			var threadIndex = i % numThreads;
+			var fileName = '$i';
+			threadBatches[threadIndex].push({
+				startPosX: sets[i].startPosX,
+				endPosX: sets[i].endPosX,
+				startPosY: sets[i].startPosY,
+				endPosY: sets[i].endPosY
+			});
+		}
+
+		for (i in 0...numThreads)
+			Thread.create(() -> runBatch(threadBatches[i]));
+	}
+
+	function runBatch(batch:Array<
+		{
+			startPosX:Int,
+			endPosX:Int,
+			startPosY:Int,
+			endPosY:Int
+		}>)
+	{
+		for (job in batch)
+		{
+			var results:Array<{ray:Ray, screenPos:Vector2}> = [];
+			mutex.acquire();
+			output.push(results);
+			if (output.length == sets.length)
+				completed = true;
+			mutex.release();
 		}
 	}
 }

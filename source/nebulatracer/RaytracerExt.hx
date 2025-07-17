@@ -87,35 +87,72 @@ class RaytracerExt
 		return null;
 	}
 
-	public function traceRays(id:Int, rays:Array<Dynamic>, traceRaysCallback:Dynamic->Void)
+	public function traceRays4(id:Int, rays:Array<ExtDynamic<SimpleRay>>):Array<Dynamic>
 	{
 		switch (engine)
 		{
 			case EMBREE:
-				Embree.set_callback_embree(traceRaysCallback);
-				Embree.trace_rays_embree(id, rays.length, arrayToNativeArray(rays));
+				var res = Embree.trace_rays4_embree(id, rays[0], rays[1], rays[2], rays[3]);
+				return [
+					{hit: res.hit1, geomID: res.geomID1},
+					{hit: res.hit2, geomID: res.geomID2},
+					{hit: res.hit3, geomID: res.geomID3},
+					{hit: res.hit4, geomID: res.geomID4}
+				];
 			default:
 		}
 		return null;
 	}
 
-	function arrayToNativeArray(arr:Array<Dynamic>):NativeArray<Dynamic>
+	public function traceRays8(id:Int, rays:Array<ExtDynamic<SimpleRay>>):Array<Dynamic>
 	{
-		var nativeArr = new NativeArray<Dynamic>(arr.length);
-		for (i in 0...arr.length)
+		switch (engine)
 		{
-			nativeArr[i] = arr[i];
+			case EMBREE:
+				var res = Embree.trace_rays8_embree(id, rays[0], rays[1], rays[2], rays[3], rays[4], rays[5], rays[6], rays[7]);
+				return [
+					{hit: res.hit1, geomID: res.geomID1},
+					{hit: res.hit2, geomID: res.geomID2},
+					{hit: res.hit3, geomID: res.geomID3},
+					{hit: res.hit4, geomID: res.geomID4},
+					{hit: res.hit5, geomID: res.geomID5},
+					{hit: res.hit6, geomID: res.geomID6},
+					{hit: res.hit7, geomID: res.geomID7},
+					{hit: res.hit8, geomID: res.geomID8}
+				];
+			default:
 		}
-		return nativeArr;
+		return null;
 	}
 
-	function nativeArrayToArray(nativeArr:hl.NativeArray<Dynamic>):Array<Dynamic>
+	public function traceRays16(id:Int, rays:Array<ExtDynamic<SimpleRay>>, valid:Array<Int>):Array<Dynamic>
 	{
-		var result = [];
-		for (i in 0...nativeArr.length)
+		switch (engine)
 		{
-			result.push(nativeArr[i]);
+			case EMBREE:
+				var res = Embree.trace_rays16_embree(id, rays[0], rays[1], rays[2], rays[3], rays[4], rays[5], rays[6], rays[7], rays[8], rays[9], rays[10],
+					rays[11], rays[12], rays[13], rays[14], rays[15], valid[0], valid[1], valid[2], valid[3], valid[4], valid[5], valid[6], valid[7],
+					valid[8], valid[9], valid[10], valid[11], valid[12], valid[13], valid[14], valid[15]);
+				return [
+					{hit: res.hit1, geomID: res.geomID1},
+					{hit: res.hit2, geomID: res.geomID2},
+					{hit: res.hit3, geomID: res.geomID3},
+					{hit: res.hit4, geomID: res.geomID4},
+					{hit: res.hit5, geomID: res.geomID5},
+					{hit: res.hit6, geomID: res.geomID6},
+					{hit: res.hit7, geomID: res.geomID7},
+					{hit: res.hit8, geomID: res.geomID8},
+					{hit: res.hit9, geomID: res.geomID9},
+					{hit: res.hit10, geomID: res.geomID10},
+					{hit: res.hit11, geomID: res.geomID11},
+					{hit: res.hit12, geomID: res.geomID12},
+					{hit: res.hit13, geomID: res.geomID13},
+					{hit: res.hit14, geomID: res.geomID14},
+					{hit: res.hit15, geomID: res.geomID15},
+					{hit: res.hit16, geomID: res.geomID16}
+				];
+			default:
 		}
-		return result;
+		return null;
 	}
 }
