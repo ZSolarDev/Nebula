@@ -1,6 +1,8 @@
 package nebula.view.renderers;
 
 import flixel.*;
+import flixel.graphics.FlxGraphic;
+import flixel.util.FlxColor;
 import haxe.Json;
 import hlwnative.HLApplicationStatus;
 import lime.math.Vector2;
@@ -30,19 +32,30 @@ typedef GeometryMeshPart =
 	var vertices:Array<Float>;
 }
 
-class Raytracer implements ViewRenderer extends FlxCameraRenderer
+class Raytracer implements ViewRenderer extends FlxCamera
 {
 	public var mutex:Mutex = new Mutex();
 	public var raytracer:NebulaTracer;
 	public var globalIllum:FlxSprite;
-	public var giRes:Int = 10;
+	public var giRes:Int = 1;
+	public var prog:Int;
+	public var maxProg:Int;
+	public var view:N3DView;
 	// public var numBounces:Int = 3; bounces later..
 	public var geom:Array<MeshPart> = [];
 	public var prevGeoms:Array<Array<MeshPart>> = [];
+	public var lights:Array<Vector3D> = [];
 
 	public function new(view:N3DView)
 	{
-		super(view);
+		super();
+		super(0, 0, view.width, view.height);
+		this.view = view;
+		// FlxG.cameras.reset(this);
+		FlxG.state.add(this);
+		// var bg = new FlxSprite(0, 0, FlxGraphic.fromBitmapData(new BitmapData(view.width, view.height, true, 0xFF00D9FF)));
+		// bg.camera = this;
+		bgColor.alpha = 0;
 		globalIllum = new FlxSprite();
 		globalIllum.makeGraphic(view.width, view.height, 0x00D9FF);
 		FlxG.state.add(globalIllum);
@@ -141,7 +154,7 @@ class Raytracer implements ViewRenderer extends FlxCameraRenderer
 		final aspectRatio = view.width / view.height;
 
 		var ndcX = (2 * x) / view.width - 1;
-		var ndcY = 1 - (2 * y) / view.height;
+		var ndcY = (2 * y) / view.height - 1;
 
 		var fovRad = Math.PI * fov / 180;
 		var tanFov = Math.tan(fovRad / 2);
@@ -153,20 +166,25 @@ class Raytracer implements ViewRenderer extends FlxCameraRenderer
 		var dir = new Vector3D(camX, camY, camZ);
 		dir.normalize();
 
-		// Apply pitch and yaw to dir (order: yaw then pitch)
-		var yaw = view.camYaw * Math.PI / 180;
-		var pitch = view.camPitch * Math.PI / 180;
+		var yaw = view.camYaw;
+		var pitch = view.camPitch;
 
+		// --- Apply Pitch (X axis) FIRST ---
 		var cosPitch = Math.cos(pitch);
 		var sinPitch = Math.sin(pitch);
+
+		var y1 = dir.y * cosPitch - dir.z * sinPitch;
+		var z1 = dir.y * sinPitch + dir.z * cosPitch;
+		var x1 = dir.x;
+
+		// --- Apply Yaw (Y axis) AFTER pitch ---
 		var cosYaw = Math.cos(yaw);
 		var sinYaw = Math.sin(yaw);
 
-		var dx = dir.x * cosYaw + dir.z * sinYaw;
-		var dy = dir.x * sinYaw * sinPitch + dir.y * cosPitch - dir.z * cosYaw * sinPitch;
-		var dz = -dir.x * sinYaw * cosPitch + dir.y * sinPitch + dir.z * cosYaw * cosPitch;
+		var x2 = x1 * cosYaw - z1 * sinYaw;
+		var z2 = x1 * sinYaw + z1 * cosYaw;
 
-		dir.setTo(dx, dy, dz);
+		dir.setTo(x2, y1, z2);
 		dir.normalize();
 
 		var ray:Ray = {
@@ -187,19 +205,13 @@ class Raytracer implements ViewRenderer extends FlxCameraRenderer
 		return out;
 	}
 
-	var rendering = false;
+	public var rendering = false;
 
-	override public function render()
-	{
-		super.render();
-	}
-
-	override public function draw()
+	public function renderScene()
 	{
 		if (rendering)
 			return;
 		rendering = true;
-		super.draw(); // do rasterization, init depth buffer, normal buffer, etc. before GI
 		geom = [];
 		globalIllum.pixels.fillRect(new Rectangle(0, 0, view.width, view.height), 0x00000000);
 
@@ -242,6 +254,8 @@ class Raytracer implements ViewRenderer extends FlxCameraRenderer
 				dist:Float,
 				screenPos:Vector2
 			}> = [];
+		maxProg = view.width * view.height;
+		prog = 0;
 		Thread.create(() ->
 		{
 			var results:Array<
@@ -269,19 +283,21 @@ class Raytracer implements ViewRenderer extends FlxCameraRenderer
 					mutex.release();
 					if (res.hit)
 					{
-						mutex.acquire();
 						var part = geom[res.geomID];
-						globalIllum.pixels.lock();
-						globalIllum.pixels.fillRect(new Rectangle(x, y, giRes, giRes), part.color);
-						globalIllum.pixels.unlock();
-						mutex.release();
+						var finalColor:FlxColor = 0xFF000000;
+						var light = lights[0];
+						var forward = new Vector3D(ray.dir.x * res.dist, ray.dir.y * res.dist, ray.dir.z * res.dist);
+						var hitPos = new Vector3D(ray.pos.x + forward.x, ray.pos.y + forward.y, ray.pos.z + forward.z);
+						var lightDir = new Vector3D(light.x - hitPos.x, light.y - hitPos.y, light.z - hitPos.z);
+						lightDir.normalize();
+						var shadowRay:Ray = {pos: hitPos, dir: lightDir};
+						var shadowRayRes = raytracer.traceRay(shadowRay);
+						if (shadowRayRes.geomID == -1)
+							finalColor += part.color;
+						globalIllum.pixels.fillRect(new Rectangle(x, y, giRes, giRes), finalColor);
 					}
-					else
-					{
-						mutex.acquire();
+					else // my fps whyyyyy...
 						globalIllum.pixels.fillRect(new Rectangle(x, y, giRes, giRes), 0xFF00D9FF);
-						mutex.release();
-					}
 					results.push({
 						ray: ray,
 						hit: res.hit,
@@ -289,6 +305,7 @@ class Raytracer implements ViewRenderer extends FlxCameraRenderer
 						dist: res.dist,
 						screenPos: new Vector2(x, y)
 					});
+					prog++;
 				}
 			}
 			mutex.acquire();

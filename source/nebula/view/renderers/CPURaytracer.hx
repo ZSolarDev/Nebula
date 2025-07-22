@@ -119,7 +119,7 @@ class CPURaytracer extends FlxSprite implements ViewRenderer
 			return 0xFF00D9FF; // sky color or fallback
 	}
 
-	public function render():Void
+	public function renderScene():Void
 	{
 		try
 		{
@@ -133,7 +133,7 @@ class CPURaytracer extends FlxSprite implements ViewRenderer
 			var height = frameHeight;
 
 			triangles = [];
-			for (tri in view.triangles)
+			for (tri in view.camSpaceTris)
 			{
 				triangles.push({
 					pos0: tri[0].pos,

@@ -19,9 +19,8 @@
 #endif
 
 
-GLFWwindow* window = nullptr;
-GladGLContext* ctx;
-GLFWwindow* oldCtx = glfwGetCurrentContext();
+GLFWwindow* window;
+GLFWwindow* limeCtx;
 
 typedef struct
 {
@@ -195,12 +194,13 @@ void initOpenGL() {
         std::cerr << "Failed to initialize GLFW\n";
         return;
     }
+    limeCtx = glfwGetCurrentContext();
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    window = glfwCreateWindow(1, 1, "_COMPUTE", nullptr, oldCtx);
+    window = glfwCreateWindow(1, 1, "_COMPUTE", nullptr, limeCtx);
     if (!window) {
         std::cerr << "Failed to create GLFW window\n";
         glfwTerminate();
@@ -208,126 +208,88 @@ void initOpenGL() {
     }
 
     glfwMakeContextCurrent(window);
-    int version = gladLoadGLContext(ctx, glfwGetProcAddress);
-    if (version == 0) {
-        printf("Failed to initialize OpenGL context for window 1\n");
-        glfwDestroyWindow(window);
-        glfwTerminate();
-        return;
-    }
+    gladLoadGL(glfwGetProcAddress);
 
-    glfwMakeContextCurrent(oldCtx);
+    glfwMakeContextCurrent(limeCtx);
 }
 
 static GLuint loadComputeShader(const char* src) {
-    GLuint shader = ctx->CreateShader(GL_COMPUTE_SHADER);
-    ctx->ShaderSource(shader, 1, &src, nullptr);
-    ctx->CompileShader(shader);
+    GLuint shader = glCreateShader(GL_COMPUTE_SHADER);
+    glShaderSource(shader, 1, &src, nullptr);
+    glCompileShader(shader);
 
     GLint success;
-    ctx->GetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
     if (!success) {
         char log[512];
-        ctx->GetShaderInfoLog(shader, 512, nullptr, log);
+        glGetShaderInfoLog(shader, 512, nullptr, log);
         std::cerr << "Compute shader compilation failed:\n" << log << std::endl;
     }
+    GLuint program = glCreateProgram();
+    glAttachShader(program, shader);
+    glLinkProgram(program);
 
-    GLuint program = ctx->CreateProgram();
-    ctx->AttachShader(program, shader);
-    ctx->LinkProgram(program);
-
-    ctx->GetProgramiv(program, GL_LINK_STATUS, &success);
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
     if (!success) {
         char log[512];
-        ctx->GetProgramInfoLog(program, 512, nullptr, log);
+        glGetProgramInfoLog(program, 512, nullptr, log);
         std::cerr << "Program linking failed:\n" << log << std::endl;
     }
-
-    ctx->DeleteShader(shader);
+    glDeleteShader(shader);
     return program;
 }
 
 std::unordered_map<int, GLuint> programs;
-
-vbyte* run_compute_shader_from_src(const char* src, void* dataIn, int groupsX, int groupsY, int groupsZ, int sizeInBytesIn, int sizeInBytesOut) {
-    glfwMakeContextCurrent(window);
-    GLuint ssboIn, ssboOut;
-
-    // input
-    ctx->GenBuffers(1, &ssboIn);
-    ctx->BindBuffer(GL_SHADER_STORAGE_BUFFER, ssboIn);
-    ctx->BufferData(GL_SHADER_STORAGE_BUFFER, sizeInBytesIn, dataIn, GL_DYNAMIC_DRAW);
-    ctx->BindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboIn);
-
-    // output
-    ctx->GenBuffers(1, &ssboOut);
-    ctx->BindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOut);
-    ctx->BufferData(GL_SHADER_STORAGE_BUFFER, sizeInBytesOut, nullptr, GL_DYNAMIC_READ);
-    ctx->BindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssboOut);
-
-    GLuint program = loadComputeShader(src);
-    ctx->UseProgram(program);
-
-    ctx->DispatchCompute(groupsX, groupsY, groupsZ);
-    ctx->MemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-	// map output buffer
-    ctx->BindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOut);
-    void* ptr = ctx->MapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-	vbyte* dataOut = hl_alloc_bytes(sizeInBytesOut);
-    if (ptr) {
-        memcpy(dataOut, ptr, sizeInBytesOut);
-        ctx->UnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-    }
-    else {
-        std::cerr << "Failed to map output buffer\n";
-    }
-
-    ctx->DeleteBuffers(1, &ssboIn);
-    ctx->DeleteBuffers(1, &ssboOut);
-    ctx->DeleteProgram(program);
-    glfwMakeContextCurrent(oldCtx);
-
-    return dataOut;
-}
 
 vbyte* run_compute_shader(int id, void* dataIn, int groupsX, int groupsY, int groupsZ, int sizeInBytesIn, int sizeInBytesOut) {
     glfwMakeContextCurrent(window);
     GLuint ssboIn, ssboOut;
 
     // input
-    ctx->GenBuffers(1, &ssboIn);
-    ctx->BindBuffer(GL_SHADER_STORAGE_BUFFER, ssboIn);
-    ctx->BufferData(GL_SHADER_STORAGE_BUFFER, sizeInBytesIn, dataIn, GL_DYNAMIC_DRAW);
-    ctx->BindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboIn);
+    glGenBuffers(1, &ssboIn);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboIn);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeInBytesIn, dataIn, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboIn);
 
     // output
-    ctx->GenBuffers(1, &ssboOut);
-    ctx->BindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOut);
-    ctx->BufferData(GL_SHADER_STORAGE_BUFFER, sizeInBytesOut, nullptr, GL_DYNAMIC_READ);
-    ctx->BindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssboOut);
+    glGenBuffers(1, &ssboOut);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOut);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeInBytesOut, nullptr, GL_DYNAMIC_READ);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssboOut);
 
     GLuint program = programs[id];
-
-    ctx->DispatchCompute(groupsX, groupsY, groupsZ);
-    ctx->MemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    glUseProgram(program);
+    glDispatchCompute(groupsX, groupsY, groupsZ);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     // map output buffer
-    ctx->BindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOut);
-    void* ptr = ctx->MapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOut);
+    void* ptr = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
     vbyte* dataOut = hl_alloc_bytes(sizeInBytesOut);
     if (ptr) {
         memcpy(dataOut, ptr, sizeInBytesOut);
-        ctx->UnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
     }
     else {
         std::cerr << "Failed to map output buffer\n";
     }
 
-    ctx->DeleteBuffers(1, &ssboIn);
-    ctx->DeleteBuffers(1, &ssboOut);
-    glfwMakeContextCurrent(oldCtx);
+    glDeleteBuffers(1, &ssboIn);
+    glDeleteBuffers(1, &ssboOut);
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+        std::cerr << "OpenGL error after dispatch: " << err << std::endl;
+    }
+    // just in case..
+    glUseProgram(0);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, 0);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, 0);
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glUseProgram(0);
+    glFinish();
 
+    glfwMakeContextCurrent(limeCtx);
     return dataOut;
 }
 
@@ -335,20 +297,29 @@ void create_compute_shader(const char* src) {
     glfwMakeContextCurrent(window);
     GLuint program = loadComputeShader(src);
     programs[programs.size() + 1] = program;
-    glfwMakeContextCurrent(oldCtx);
-}
-
-void set_compute_shader(int id) {
-    glfwMakeContextCurrent(window);
-    ctx->UseProgram(programs[id]);
-    glfwMakeContextCurrent(oldCtx);
+    glfwMakeContextCurrent(limeCtx);
 }
 
 void remove_compute_shader(int id) {
     glfwMakeContextCurrent(window);
-    ctx->DeleteProgram(programs[id]);
+    glDeleteProgram(programs[id]);
 	programs.erase(id);
-    glfwMakeContextCurrent(oldCtx);
+    glfwMakeContextCurrent(limeCtx);
+}
+
+vbyte* run_compute_shader_from_src(const char* src, void* dataIn, int groupsX, int groupsY, int groupsZ, int sizeInBytesIn, int sizeInBytesOut) {
+    create_compute_shader(src);
+    vbyte* dataOut = run_compute_shader(
+        programs.size(),
+        dataIn,
+        groupsX,
+        groupsY,
+        groupsZ,
+        sizeInBytesIn,
+        sizeInBytesOut
+    );
+    remove_compute_shader(programs.size());
+    return dataOut;
 }
 
 //------------------------- HashLink -------------------------//
@@ -406,6 +377,11 @@ HL_PRIM vdynamic* HL_NAME(trace_ray_embree)(int id, vdynamic* _ray) {
 }
 DEFINE_PRIM(_DYN, trace_ray_embree, _I32 _DYN);
 
+HL_PRIM void HL_NAME(init_opengl)(_NO_ARG) {
+	initOpenGL();
+}
+DEFINE_PRIM(_VOID, init_opengl, _NO_ARG);
+
 HL_PRIM vbyte* HL_NAME(run_compute_shader_from_src)(vstring* src, vbyte* dataIn, int groupsX, int groupsY, int groupsZ, int sizeBytesIn, int sizeBytesOut) {
     return run_compute_shader_from_src(
         hl_to_utf8(src->bytes),
@@ -417,7 +393,7 @@ HL_PRIM vbyte* HL_NAME(run_compute_shader_from_src)(vstring* src, vbyte* dataIn,
 		sizeBytesOut
 	);
 }
-DEFINE_PRIM(_BYTES, run_compute_shader_from_src, _STRING _BYTES, _I32 _I32 _I32 _I32 _I32);
+DEFINE_PRIM(_BYTES, run_compute_shader_from_src, _STRING _BYTES _I32 _I32 _I32 _I32 _I32);
 
 HL_PRIM vbyte* HL_NAME(run_compute_shader)(int id, vbyte* dataIn, int groupsX, int groupsY, int groupsZ, int sizeBytesIn, int sizeBytesOut) {
     return run_compute_shader(
@@ -430,17 +406,12 @@ HL_PRIM vbyte* HL_NAME(run_compute_shader)(int id, vbyte* dataIn, int groupsX, i
         sizeBytesOut
     );
 }
-DEFINE_PRIM(_BYTES, run_compute_shader, _I32 _BYTES, _I32 _I32 _I32 _I32 _I32);
+DEFINE_PRIM(_BYTES, run_compute_shader, _I32 _BYTES _I32 _I32 _I32 _I32 _I32);
 
 HL_PRIM void HL_NAME(create_compute_shader)(vstring* src) {
     create_compute_shader(hl_to_utf8(src->bytes));
 }
 DEFINE_PRIM(_VOID, create_compute_shader, _STRING);
-
-HL_PRIM void HL_NAME(set_compute_shader)(int id) {
-    set_compute_shader(id);
-}
-DEFINE_PRIM(_VOID, set_compute_shader, _I32);
 
 HL_PRIM void HL_NAME(remove_compute_shader)(int id) {
     remove_compute_shader(id);

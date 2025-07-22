@@ -26,21 +26,22 @@ class FlxCameraRenderer extends FlxCamera implements ViewRenderer
 		bg.camera = this;
 	}
 
-	override public function render() // Doesnt work when I put drawing code in here, I have to overwrite draw.
-	{
-		super.render();
-	}
-
 	function processBuffers(screenSpaceMeshes:Array<ProjectionMesh>, camSpaceVerts:Array<Array<ClippingVertex>>, meshes:Array<Mesh>)
 	{
 		// ------- Depth buffer ------- //
-        var depthBuffer = new BitmapData(view.width, view.height, true, 0xFF000000);
-        
+		var depthBuffer = new BitmapData(view.width, view.height, true, 0xFF000000);
 	}
+
+	public var rendering = false;
+
+	public function renderScene() {} // nothing draws when i put it in here, i have to overwrite draw myself.
 
 	override public function draw()
 	{
 		super.draw();
+		if (rendering)
+			return;
+		rendering = true;
 		bg.draw();
 		if (!view.render) // Manual check
 			return;
@@ -65,6 +66,7 @@ class FlxCameraRenderer extends FlxCamera implements ViewRenderer
 			drawTriangles(mesh._graphic, projectedMesh.verts, projectedMesh.indices, projectedMesh.uvt, null, new FlxPoint(meshPos.x, meshPos.y), mesh.blend,
 				mesh.repeat, mesh.smooth);
 		}
+		rendering = false;
 	}
 
 	override public function destroy()

@@ -1,6 +1,7 @@
-package nebulatracer;
+package nebulatracer.native;
 
 @:hlNative("nebulatracer")
+@:noCompletion
 class Embree
 {
 	public static function new_embree():Void {}

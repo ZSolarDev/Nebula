@@ -1,9 +1,8 @@
 package nebulatracer;
 
-import nebulatracer.Embree;
+import nebulatracer.Global.ExtDynamic;
 import nebulatracer.NebulaTracer.SimpleRay;
-
-abstract ExtDynamic<T>(Dynamic) from T to T {}
+import nebulatracer.native.Embree;
 
 class RaytracerExt
 {
