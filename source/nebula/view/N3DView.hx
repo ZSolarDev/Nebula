@@ -29,7 +29,7 @@ class N3DView extends FlxBasic
 	public var renderer:ViewRenderer;
 	public var render:Bool = true;
 	public var meshes:Array<Mesh> = [];
-	public var triangles:Array<Array<ClippingVertex>> = [];
+	public var camSpaceTris:Array<Array<ClippingVertex>> = [];
 	public var fov:Float;
 	public var nearPlane:Float = 1;
 	public var farPlane:Float = 100000;
@@ -130,7 +130,7 @@ class N3DView extends FlxBasic
 
 	override public function update(elapsed:Float)
 	{
-		triangles = [];
+		camSpaceTris = [];
 		super.update(elapsed);
 
 		// --- camera Movement ---
@@ -309,7 +309,7 @@ class N3DView extends FlxBasic
 					};
 
 					var triangle = [v0, v1, v2];
-					triangles.push(triangle);
+					camSpaceTris.push(triangle);
 					var skip = false;
 					for (i in 0...3) // URGENT: implement proper vertex clipping
 					{
@@ -350,12 +350,9 @@ class N3DView extends FlxBasic
 
 	public function renderView(elapsed:Float)
 	{
-		Thread.create(() ->
-		{
-			if (renderer != null)
-				renderer.render();
-			else
-				Log.warn('A renderer for this N3DView was not provided, failed to render.');
-		});
+		if (renderer != null)
+			renderer.render();
+		else
+			Log.warn('A renderer for this N3DView was not provided, failed to render.');
 	}
 }

@@ -6,8 +6,9 @@ import hlwnative.HLApplicationStatus;
 import lime.math.Vector2;
 import lime.utils.Log;
 import nebula.mesh.MeshPart;
-import nebulatracer.NebulaTracer.NTracerEngine;
 import nebulatracer.NebulaTracer;
+import openfl.display.BitmapData;
+import openfl.geom.Point;
 import openfl.geom.Rectangle;
 import openfl.geom.Vector3D;
 import sys.thread.Mutex;
@@ -29,22 +30,23 @@ typedef GeometryMeshPart =
 	var vertices:Array<Float>;
 }
 
-class Raytracer implements ViewRenderer extends FlxSprite
+class Raytracer implements ViewRenderer extends FlxCameraRenderer
 {
-	public var view:N3DView;
+	public var mutex:Mutex = new Mutex();
 	public var raytracer:NebulaTracer;
+	public var globalIllum:FlxSprite;
+	public var giRes:Int = 10;
 	// public var numBounces:Int = 3; bounces later..
 	public var geom:Array<MeshPart> = [];
 	public var prevGeoms:Array<Array<MeshPart>> = [];
-	public var bvhThreshold:Float = 35;
 
-	public function new(view:N3DView, ?raytracerEngine:NTracerEngine = EMBREE)
+	public function new(view:N3DView)
 	{
-		super();
-		this.view = view;
-		FlxG.state.add(this);
-		makeGraphic(view.width, view.height, 0x00D9FF);
-		raytracer = new NebulaTracer(raytracerEngine);
+		super(view);
+		globalIllum = new FlxSprite();
+		globalIllum.makeGraphic(view.width, view.height, 0x00D9FF);
+		FlxG.state.add(globalIllum);
+		raytracer = new NebulaTracer();
 	}
 
 	function jsonifyGeom():String
@@ -133,7 +135,7 @@ class Raytracer implements ViewRenderer extends FlxSprite
 		return (total / maxCount) * 100;
 	}
 
-	function pixelToWorld(x:Float, y:Float):Ray
+	public function pixelToWorld(x:Float, y:Float):Ray
 	{
 		final fov = view.fov;
 		final aspectRatio = view.width / view.height;
@@ -187,13 +189,19 @@ class Raytracer implements ViewRenderer extends FlxSprite
 
 	var rendering = false;
 
-	public function render()
+	override public function render()
+	{
+		super.render();
+	}
+
+	override public function draw()
 	{
 		if (rendering)
 			return;
 		rendering = true;
+		super.draw(); // do rasterization, init depth buffer, normal buffer, etc. before GI
 		geom = [];
-		pixels.fillRect(new Rectangle(0, 0, view.width, view.height), 0x00000000);
+		globalIllum.pixels.fillRect(new Rectangle(0, 0, view.width, view.height), 0x00000000);
 
 		for (mesh in view.meshes)
 			for (meshPart in mesh.meshParts)
@@ -206,20 +214,11 @@ class Raytracer implements ViewRenderer extends FlxSprite
 				final oldGeom = prevGeoms[0];
 				final change = compareGeoms(oldGeom, geom);
 
-				if (change >= bvhThreshold)
+				if (change > 0)
 				{
 					Log.info('Rebuilding BVH (Change: $change%)');
 					raytracer.geometry = jsonifyGeom();
 					raytracer.rebuildBVH();
-				}
-				else
-				{
-					if (change > 0)
-					{
-						Log.info('Refitting BVH (Change: $change%)');
-						raytracer.geometry = jsonifyGeom();
-						raytracer.refitBVH();
-					}
 				}
 
 				prevGeoms.shift(); // remove oldest
@@ -234,101 +233,71 @@ class Raytracer implements ViewRenderer extends FlxSprite
 		if (prevGeoms.length < 20)
 			prevGeoms.push(deepCopyGeom(geom));
 
-		var renderersComplete = 0;
-		for (y in 0...view.height)
-		{
-			for (x in 0...view.width)
+		var completed:Bool = false;
+		var output:Array<
 			{
-				var ray = pixelToWorld(x, y);
-				var res = raytracer.traceRay(ray);
-				if (res.hit)
+				ray:Ray,
+				hit:Bool,
+				geomID:Int,
+				dist:Float,
+				screenPos:Vector2
+			}> = [];
+		Thread.create(() ->
+		{
+			var results:Array<
 				{
-					var part = geom[res.geomID];
-					pixels.setPixel32(cast x, cast y, part.color);
-				}
-				else
+					ray:Ray,
+					hit:Bool,
+					geomID:Int,
+					dist:Float,
+					screenPos:Vector2
+				}> = [];
+			var giRes = giRes;
+			for (y in 0...view.height)
+			{
+				if (y % giRes != 0)
+					continue;
+
+				for (x in 0...view.width)
 				{
-					pixels.setPixel32(cast x, cast y, 0xFF00D9FF);
+					if (x % giRes != 0)
+						continue;
+
+					var ray = pixelToWorld(x, y);
+					mutex.acquire();
+					var res = raytracer.traceRay(ray);
+					mutex.release();
+					if (res.hit)
+					{
+						mutex.acquire();
+						var part = geom[res.geomID];
+						globalIllum.pixels.lock();
+						globalIllum.pixels.fillRect(new Rectangle(x, y, giRes, giRes), part.color);
+						globalIllum.pixels.unlock();
+						mutex.release();
+					}
+					else
+					{
+						mutex.acquire();
+						globalIllum.pixels.fillRect(new Rectangle(x, y, giRes, giRes), 0xFF00D9FF);
+						mutex.release();
+					}
+					results.push({
+						ray: ray,
+						hit: res.hit,
+						geomID: res.geomID,
+						dist: res.dist,
+						screenPos: new Vector2(x, y)
+					});
 				}
 			}
-		}
-		rendering = false;
-	}
-}
-
-class RayteacerThreaded
-{
-	// This is the first time i've used a mutex
-	public var mutex = new Mutex();
-	public var numThreads:Int = cast HLApplicationStatus.getTotalThreads();
-	public var threadBatches:Array<Array<
-		{
-			startPosX:Int,
-			endPosX:Int,
-			startPosY:Int,
-			endPosY:Int
-		}>> = [];
-	public var parent:Raytracer;
-	public var sets:Array<
-		{
-			startPosX:Int,
-			endPosX:Int,
-			startPosY:Int,
-			endPosY:Int
-		}> = [];
-	public var output:Array<Array<{ray:Ray, screenPos:Vector2}>> = [];
-	public var completed:Bool = false;
-
-	public function new(parent:Raytracer, sets:Array<
-		{
-			startPosX:Int,
-			endPosX:Int,
-			startPosY:Int,
-			endPosY:Int
-		}>)
-	{
-		this.parent = parent;
-		this.sets = sets;
-
-		for (_ in 0...numThreads)
-			threadBatches.push([]);
-	}
-
-	public function runBatches()
-	{
-		// distribute sample sets across threads using wraparound
-		for (i in 0...sets.length)
-		{
-			var threadIndex = i % numThreads;
-			var fileName = '$i';
-			threadBatches[threadIndex].push({
-				startPosX: sets[i].startPosX,
-				endPosX: sets[i].endPosX,
-				startPosY: sets[i].startPosY,
-				endPosY: sets[i].endPosY
-			});
-		}
-
-		for (i in 0...numThreads)
-			Thread.create(() -> runBatch(threadBatches[i]));
-	}
-
-	function runBatch(batch:Array<
-		{
-			startPosX:Int,
-			endPosX:Int,
-			startPosY:Int,
-			endPosY:Int
-		}>)
-	{
-		for (job in batch)
-		{
-			var results:Array<{ray:Ray, screenPos:Vector2}> = [];
 			mutex.acquire();
-			output.push(results);
-			if (output.length == sets.length)
-				completed = true;
+			output = results;
+			completed = true;
 			mutex.release();
-		}
+		});
+		while (!completed)
+			Sys.sleep(0.001);
+		rendering = false;
 	}
 }

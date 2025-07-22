@@ -71,12 +71,12 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>C:\ProgramData\NVIDIA Corporation\OptiX SDK 9.0.0\include;C:\Program Files\HashLink\1ffbbb4\include;C:\Program Files\Embree\4.4.0-windows\include\;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\ProgramData\NVIDIA Corporation\OptiX SDK 9.0.0\lib;C:\Program Files\Embree\4.4.0-windows\lib;C:\Program Files\HashLink\1ffbbb4;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Program Files\GLFW\glfw-3.4.bin.WIN64\include;C:\Program Files\GLEW\glew-2.2.0\include;C:\Program Files\HashLink\1ffbbb4\include;C:\Program Files\Embree\4.4.0-windows\include\;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Program Files\GLFW\glfw-3.4.bin.WIN64\lib-vc2022;C:\Program Files\GLEW\glew-2.2.0\lib\Release\x64;C:\Program Files\Embree\4.4.0-windows\lib;C:\Program Files\HashLink\1ffbbb4;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>C:\ProgramData\NVIDIA Corporation\OptiX SDK 9.0.0\include;C:\Program Files\HashLink\1ffbbb4\include;C:\Program Files\Embree\4.4.0-windows\include\;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\ProgramData\NVIDIA Corporation\OptiX SDK 9.0.0\lib;C:\Program Files\Embree\4.4.0-windows\lib;C:\Program Files\HashLink\1ffbbb4;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Program Files\GLFW\glfw-3.4.bin.WIN64\include;C:\Program Files\GLEW\glew-2.2.0\include;C:\Program Files\HashLink\1ffbbb4\include;C:\Program Files\Embree\4.4.0-windows\include\;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Program Files\GLFW\glfw-3.4.bin.WIN64\lib-vc2022;C:\Program Files\GLEW\glew-2.2.0\lib\Release\x64;C:\Program Files\Embree\4.4.0-windows\lib;C:\Program Files\HashLink\1ffbbb4;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -118,7 +118,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>libhl.lib;embree4.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>libhl.lib;embree4.lib;glew32s.lib;glfw3_mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>copy $(TargetDir)$(TargetFileName)  $(TargetDir)$(TargetName).hdll </Command>
@@ -140,17 +140,20 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>libhl.lib;embree4.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>libhl.lib;embree4.lib;glew32s.lib;glfw3_mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>copy $(TargetDir)$(TargetFileName)  $(TargetDir)$(TargetName).hdll </Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="embree.cpp" />
+    <ClCompile Include="nebulatracer.cpp" />
+    <ClCompile Include="gl.c" />
     <ClCompile Include="parson.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="gl.h" />
+    <ClInclude Include="khrplatform.h" />
     <ClInclude Include="parson.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

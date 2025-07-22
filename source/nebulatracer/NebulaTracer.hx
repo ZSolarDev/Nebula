@@ -4,17 +4,6 @@ import haxe.Timer;
 import openfl.geom.Vector3D;
 
 /**
- * The type of raytracer to use.
- * @see `NebulaTracer.engine`
- */
-enum abstract NTracerEngine(Int)
-{
-	var DXRAYTRACER = 0;
-	var EMBREE = 1;
-	var OPTIX = 2;
-}
-
-/**
  * The update mode of the BVH.
  * @see `NebulaTracer.bvhUpdateMode`
  */
@@ -67,25 +56,6 @@ class NebulaTracer
 	private var _raytracerExt:RaytracerExt;
 
 	/**
-	 * The engine this raytracer is using:
-	 * 
-	 * - **DXRAYTRACER (DirectX Raytracer)**:  
-	 *   A GPU raytracer that is compatible with Windows systems with DirectX12 and above,  
-	 *   as well as a compatible GPU (NVIDIA, AMD, Intel, etc).
-	 * 
-	 * - **EMBREE (Embree)**:  
-	 *   A high-performance CPU raytracer that is compatible with most platforms.  
-	 *   Slower than DXRAYTRACER and OPTIX but still reliable.
-	 * 
-	 * - **OPTIX (OptiX)**:  
-	 *   A GPU raytracer meant specifically for NVIDIA GPUs using CUDA.
-	 * 
-	 * 
-	 * This variable cannot be changed after initialization!
-	 */
-	public var engine:FinalOnce<NTracerEngine>;
-
-	/**
 	 * The geometry of the scene to be raytraced.  
 	 * TODO: Define a JSON format for geometry that the externs can parse
 	 * 
@@ -102,38 +72,12 @@ class NebulaTracer
 
 	/**
 	 * Creates a new NebulaTracer.
-	 * @param engine The engine this raytracer should use.
-	 * - **DXRAYTRACER (DirectX Raytracer)**:  
-	 *   A GPU raytracer that is compatible with Windows systems with DirectX12 and above,  
-	 *   as well as a compatible GPU (NVIDIA, AMD, Intel, etc).
-	 * 
-	 * - **EMBREE (Embree)**:  
-	 *   A high-performance CPU raytracer that is compatible with most platforms.  
-	 *   Slower than DXRAYTRACER and OPTIX but still reliable.
-	 * 
-	 * - **OPTIX (OptiX)**:  
-	 *   A GPU raytracer meant specifically for NVIDIA GPUs using CUDA.
-	 * 
-	 * 
-	 * This variable cannot be changed after initialization!
 	 */
-	public function new(engine:NTracerEngine)
+	public function new()
 	{
-		switch (engine)
-		{
-			case DXRAYTRACER:
-				_ID = Global.DXRID + 1;
-				Global.DXRID = _ID;
-			case EMBREE:
-				_ID = Global.EMBREEID + 1;
-				Global.EMBREEID = _ID;
-			case OPTIX:
-				_ID = Global.OPTIXID + 1;
-				Global.OPTIXID = _ID;
-		}
-
-		this.engine = engine;
-		_raytracerExt = new RaytracerExt(engine);
+		_ID = Global.EMBREEID + 1;
+		Global.EMBREEID = _ID;
+		_raytracerExt = new RaytracerExt();
 		_raytracerExt.newRaytracer();
 	}
 
@@ -147,29 +91,7 @@ class NebulaTracer
 	}
 
 	/**
-	 * Refits the BVH. This function:
-	 * - Quickly changes the existing BVH to fit the new geometry.
-	 *   This is reccomended for small geometry changes for its speed. However,
-	 *   if the geometry changes drastically, ray traversal may not be as
-	 *   efficient. This in turn lowers performance. If you have to update the
-	 *   BVH and your geometry changed drastically, use `rebuildBVH` instead.
-	 *  **THIS OPTION IS NOT SUPPORTED ON EMBREE, IT WILL TO REBUILD INSTEAD!**
-	 *  
-	 *   TLDR: Use only if the scene geometry doesnt stray too far from the last rebuild.
-	 */
-	public function refitBVH()
-	{
-		_raytracerExt.refitBVH(_ID);
-	}
-
-	/**
-	 * Rebuilds the BVH. This function:
-	 * - Remakes the entire BVH from scratch.
-	 *   Takes more time, but ensures that ray traversal is as efficient as
-	 *   possible. This should be used when the geometry changes drastically.
-	 *   If your geometry hasnt strayed too far from the last rebuild, use `refitBVH` instead.
-	 * 
-	 *   TLDR: Use only if the scene geometry changes drastically.
+	 * Rebuilds the BVH.
 	 */
 	public function rebuildBVH()
 	{
@@ -180,7 +102,7 @@ class NebulaTracer
 	 * Traces a ray.
 	 * @param ray The ray to trace with.
 	 */
-	public function traceRay(ray:Ray):{hit:Bool, geomID:Int}
+	public function traceRay(ray:Ray):{hit:Bool, dist:Float, geomID:Int}
 	{
 		var simpleRay = NTUtils.simplifyRay(ray);
 		return cast _raytracerExt.traceRay(_ID, simpleRay);

@@ -15,15 +15,24 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="embree.cpp">
+    <ClCompile Include="nebulatracer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="parson.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="gl.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="parson.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="gl.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="khrplatform.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

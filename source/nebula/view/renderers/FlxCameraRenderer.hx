@@ -3,12 +3,18 @@ package nebula.view.renderers;
 import flixel.*;
 import flixel.graphics.FlxGraphic;
 import flixel.math.FlxPoint;
+import nebula.mesh.Mesh;
+import nebula.mesh.ProjectionMesh;
+import nebula.view.N3DView.ClippingVertex;
+import openfl.display.Bitmap;
 import openfl.display.BitmapData;
 
 class FlxCameraRenderer extends FlxCamera implements ViewRenderer
 {
 	public var view:N3DView;
 	public var bg:FlxSprite;
+
+	public var buffers:Map<String, BitmapData> = new Map();
 
 	public function new(view:N3DView)
 	{
@@ -23,6 +29,13 @@ class FlxCameraRenderer extends FlxCamera implements ViewRenderer
 	override public function render() // Doesnt work when I put drawing code in here, I have to overwrite draw.
 	{
 		super.render();
+	}
+
+	function processBuffers(screenSpaceMeshes:Array<ProjectionMesh>, camSpaceVerts:Array<Array<ClippingVertex>>, meshes:Array<Mesh>)
+	{
+		// ------- Depth buffer ------- //
+        var depthBuffer = new BitmapData(view.width, view.height, true, 0xFF000000);
+        
 	}
 
 	override public function draw()
@@ -44,6 +57,7 @@ class FlxCameraRenderer extends FlxCamera implements ViewRenderer
 				}
 			}
 		}
+		processBuffers(sortedMeshes, view.camSpaceTris, view.meshes);
 		for (projectedMesh in sortedMeshes)
 		{
 			var mesh = projectedMesh.mesh;

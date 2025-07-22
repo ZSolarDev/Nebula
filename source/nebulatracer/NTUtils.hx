@@ -1,10 +1,7 @@
 package nebulatracer;
 
-import flixel.util.typeLimit.OneOfThree;
-import nebulatracer.NebulaTracer.NTracerEngine;
 import nebulatracer.NebulaTracer.Ray;
 import nebulatracer.NebulaTracer.SimpleRay;
-import nebulatracer.native.*;
 
 class NTUtils
 {
