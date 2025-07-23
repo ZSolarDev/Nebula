@@ -41,7 +41,6 @@
 	<!-- _______________________________ Libraries ______________________________ -->
 
 	<haxelib name="flixel" />
-    <haxelib name="away3d" />
     <haxelib name="hlwnative" />
 
 	<!--In case you want to use the addons package-->
