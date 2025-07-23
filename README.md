@@ -36,3 +36,5 @@ A 3D renderer for HaxeFlixel
 - [x] Make the externs for Compute Shaders/hashlink
 - [ ] Make the externs for Compute Shaders/hxcpp
 - [ ] Integrate with Nebula
+
+Also make demos for the readme(you should try something like this https://youtu.be/Pj1P0zV4zDI?si=vkvAiw9wYIPGxvK1 try it with particles, then try making a volume with points indtead of particles and sample that with rays and see the difference.)
