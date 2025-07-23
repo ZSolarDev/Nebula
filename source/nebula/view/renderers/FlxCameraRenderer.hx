@@ -22,7 +22,7 @@ class FlxCameraRenderer extends FlxCamera implements ViewRenderer
 		this.view = view;
 		FlxG.cameras.reset(this);
 		FlxG.state.add(this);
-		bg = new FlxSprite(0, 0, FlxGraphic.fromBitmapData(new BitmapData(view.width, view.height, true, 0xFF00D9FF)));
+		bg = new FlxSprite(0, 0, FlxGraphic.fromBitmapData(new BitmapData(view.width, view.height, true, 0xFF000000)));
 		bg.camera = this;
 	}
 
@@ -39,11 +39,8 @@ class FlxCameraRenderer extends FlxCamera implements ViewRenderer
 	override public function draw()
 	{
 		super.draw();
-		if (rendering)
-			return;
-		rendering = true;
 		bg.draw();
-		if (!view.render) // Manual check
+		if (!view.render)
 			return;
 		var sortedMeshes = view.projectedMeshes.copy();
 		for (i in 0...sortedMeshes.length - 1)
@@ -66,7 +63,6 @@ class FlxCameraRenderer extends FlxCamera implements ViewRenderer
 			drawTriangles(mesh._graphic, projectedMesh.verts, projectedMesh.indices, projectedMesh.uvt, null, new FlxPoint(meshPos.x, meshPos.y), mesh.blend,
 				mesh.repeat, mesh.smooth);
 		}
-		rendering = false;
 	}
 
 	override public function destroy()

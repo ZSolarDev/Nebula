@@ -1,8 +1,8 @@
 package nebulatracer;
 
+import haxe.Timer;
 import hl.F32;
 import nebulatracer.RaytracerExt.TraceResult;
-import haxe.Timer;
 import openfl.geom.Vector3D;
 
 /**
@@ -22,6 +22,7 @@ typedef Ray =
 {
 	var pos:Vector3D;
 	var dir:Vector3D;
+	var energy:Float;
 }
 
 /**

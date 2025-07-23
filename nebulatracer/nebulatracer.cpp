@@ -29,10 +29,14 @@ typedef struct
     float dirx, diry, dirz;
 } SimpleRay;
 
-struct HitResult {
+typedef struct
+{
+    hl_type* t;
     bool hit;
-    unsigned int geomID;
-};
+	float distance;
+    int geomID;
+    int primID;
+} HitResult;
 
 struct RaytracerInstance {
     RTCDevice device = nullptr;
@@ -84,15 +88,14 @@ extern "C" void rebuildBVH(int id) {
     buildBVH(id);
 }
 
-extern "C" void traceRay(int id, SimpleRay* ray, bool* hitOut, unsigned int* geomIDOut, float* distOut) {
-    if (!ray || !hitOut || !geomIDOut) return;
+extern "C" HitResult traceRay(int id, SimpleRay* ray) {
     std::lock_guard<std::mutex> lock(raytracerMutex);
-    if (!raytracers.count(id)) return;
-
+    HitResult result = {};
     RaytracerInstance* instance = raytracers[id];
 
-
     RTCRayHit rayhit = {};
+    rayhit.ray = {};
+    rayhit.hit = {};
     rayhit.ray.org_x = ray->posx;
     rayhit.ray.org_y = ray->posy;
     rayhit.ray.org_z = ray->posz;
@@ -105,16 +108,15 @@ extern "C" void traceRay(int id, SimpleRay* ray, bool* hitOut, unsigned int* geo
     rayhit.ray.mask = -1;
     rayhit.ray.id = 0;
     rayhit.ray.flags = 0;
-
     rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
     rayhit.hit.primID = RTC_INVALID_GEOMETRY_ID;
     rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
-
     rtcIntersect1(instance->scene, &rayhit);
-
-    *hitOut = rayhit.hit.geomID != RTC_INVALID_GEOMETRY_ID;
-    *geomIDOut = rayhit.hit.geomID;
-	*distOut = rayhit.ray.tfar;
+	result.distance = rayhit.ray.tfar;
+	result.hit = rayhit.hit.geomID != RTC_INVALID_GEOMETRY_ID;
+	result.geomID = rayhit.hit.geomID;
+	result.primID = rayhit.hit.primID;
+    return result;
 }
 
 void loadGeometry(const char* json, int id) {
@@ -354,28 +356,16 @@ HL_PRIM void HL_NAME(load_geometry_embree)(vstring* jsonStr, int id) {
 }
 DEFINE_PRIM(_VOID, load_geometry_embree, _STRING _I32);
 
-HL_PRIM vdynamic* HL_NAME(trace_ray_embree)(int id, vdynamic* _ray) {
-    SimpleRay ray = {
-        .posx = (float)hl_dyn_getd(_ray, hl_hash_utf8("posx")),
-        .posy = (float)hl_dyn_getd(_ray, hl_hash_utf8("posy")),
-        .posz = (float)hl_dyn_getd(_ray, hl_hash_utf8("posz")),
-        .dirx = (float)hl_dyn_getd(_ray, hl_hash_utf8("dirx")),
-        .diry = (float)hl_dyn_getd(_ray, hl_hash_utf8("diry")),
-        .dirz = (float)hl_dyn_getd(_ray, hl_hash_utf8("dirz"))
-    };
-
-    bool hit = false;
-	float dist = 0.0f;
-    unsigned int geomID = 0;
-    traceRay(id, &ray, &hit, &geomID, &dist);
-
-    vdynamic* result = (vdynamic*)hl_alloc_dynobj();
-    hl_dyn_seti(result, hl_hash_utf8("hit"), &hlt_bool, hit);
-    hl_dyn_seti(result, hl_hash_utf8("dist"), &hlt_f32, dist);
-    hl_dyn_seti(result, hl_hash_utf8("geomID"), &hlt_i32, geomID);
-    return result;
+HL_PRIM HitResult* HL_NAME(trace_ray_embree)(int id, SimpleRay* _ray) {
+    HitResult res = traceRay(id, _ray);
+    HitResult* finalRes = (HitResult*)hl_gc_alloc_raw(sizeof(HitResult));
+	finalRes->distance = res.distance;
+	finalRes->hit = res.hit;
+	finalRes->geomID = res.geomID;
+	finalRes->primID = res.primID;
+    return finalRes;
 }
-DEFINE_PRIM(_DYN, trace_ray_embree, _I32 _DYN);
+DEFINE_PRIM(_OBJ(_BOOL _F32 _I32 _I32), trace_ray_embree, _I32 _OBJ(_F32 _F32 _F32 _F32 _F32 _F32));
 
 HL_PRIM void HL_NAME(init_opengl)(_NO_ARG) {
 	initOpenGL();
@@ -417,3 +407,6 @@ HL_PRIM void HL_NAME(remove_compute_shader)(int id) {
     remove_compute_shader(id);
 }
 DEFINE_PRIM(_VOID, remove_compute_shader, _I32);
+
+HL_PRIM void HL_NAME(dummy_func)(_NO_ARG) {}
+DEFINE_PRIM(_VOID, dummy_func, _NO_ARG);

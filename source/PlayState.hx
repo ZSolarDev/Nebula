@@ -7,6 +7,7 @@ import haxe.Timer;
 import nebula.mesh.*;
 import nebula.view.*;
 import nebula.view.renderers.*;
+import nebulatracer.native.Embree;
 import openfl.Vector;
 import openfl.geom.Vector3D;
 import sys.thread.Thread;
@@ -21,7 +22,7 @@ class PlayState extends FlxState
 	var controls:FlxText;
 	var cam:FlxCamera;
 
-	override public function new(?separated:Bool = false)
+	override public function new(?separated:Bool = true)
 	{
 		super();
 		this.separated = separated;
@@ -45,9 +46,10 @@ class PlayState extends FlxState
 		controls.text += separated ? '
         Enter: Show/Start Render
         Escape: Hide render
+        Backspace: Hide/Show Rasterizer
         ' : '
-        Minus: Increase GI resolution
-        Plus: Decrease GI resolution
+        Minus: Decerase GI resolution
+        Plus: Increase GI resolution
         ';
 		controls.setFormat(null, 8, 0xFFFFFFFF, LEFT, OUTLINE, 0xFF000000);
 		add(controls);
@@ -98,7 +100,8 @@ class PlayState extends FlxState
 		var sun = createSphereMesh(0, -150, -150, 30, FlxColor.YELLOW, sphereDetail, sphereDetail);
 		sun.raytracingProperties = {reflectiveness: 0, lightness: 1};
 		// view.pushMesh(new Mesh(0, 0, 1, [sun]));
-		cpuRaytracer.lights.push(new Vector3D(0, -150, -150));
+		cpuRaytracer.lights.push({pos: new Vector3D(0, -150, -150), color: FlxColor.YELLOW, power: 320});
+		cpuRaytracer.lights.push({pos: new Vector3D(0, -150, 300), color: FlxColor.YELLOW, power: 320});
 	}
 
 	function createSphereMesh(x:Float, y:Float, z:Float, radius:Float, color:Int, latSteps:Int = 6, lonSteps:Int = 6):MeshPart
@@ -233,6 +236,10 @@ class PlayState extends FlxState
 			}
 			if (FlxG.keys.justPressed.ESCAPE)
 				cpuRaytracer.globalIllum.visible = false;
+			if (FlxG.keys.justPressed.BACKSPACE)
+			{
+				view.render = !view.render;
+			}
 		}
 		if (FlxG.keys.justPressed.R)
 			FlxG.switchState(() -> new PlayState(!separated));

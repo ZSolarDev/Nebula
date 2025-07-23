@@ -18,6 +18,8 @@ class Embree
 
 	public static function rebuild_bvh_embree(id:Int):Void {}
 
+	public static function dummy_func():Void {}
+
 	public static function load_geometry_embree(string:String, id:Int):Void {}
 
 	public static function trace_ray_embree(id:Int, ray:SimpleRay):TraceResult

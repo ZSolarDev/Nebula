@@ -1,20 +1,22 @@
 package nebula.view.renderers;
 
-import nebula.utils.Vec3DHelper;
-import nebulatracer.RaytracerExt.TraceResult;
 import flixel.*;
 import flixel.graphics.FlxGraphic;
+import flixel.math.FlxMath;
 import flixel.util.FlxColor;
 import haxe.Json;
 import hlwnative.HLApplicationStatus;
 import lime.math.Vector2;
 import lime.utils.Log;
 import nebula.mesh.MeshPart;
+import nebula.utils.Vec3DHelper;
 import nebulatracer.NebulaTracer;
+import nebulatracer.RaytracerExt.TraceResult;
 import openfl.display.BitmapData;
 import openfl.geom.Point;
 import openfl.geom.Rectangle;
 import openfl.geom.Vector3D;
+import sys.FileSystem;
 import sys.thread.Mutex;
 import sys.thread.Thread;
 
@@ -34,6 +36,13 @@ typedef GeometryMeshPart =
 	var vertices:Array<Float>;
 }
 
+typedef Light =
+{
+	var pos:Vector3D;
+	var color:FlxColor;
+	var power:Float;
+}
+
 class Raytracer implements ViewRenderer extends FlxCamera
 {
 	public var mutex:Mutex = new Mutex();
@@ -43,10 +52,12 @@ class Raytracer implements ViewRenderer extends FlxCamera
 	public var prog:Int;
 	public var maxProg:Int;
 	public var view:N3DView;
-	// public var numBounces:Int = 3; bounces later..
+	public var numBounces:Int = 1;
 	public var geom:Array<MeshPart> = [];
 	public var prevGeoms:Array<Array<MeshPart>> = [];
-	public var lights:Array<Vector3D> = [];
+	public var lights:Array<Light> = [];
+	public var skyColor:FlxColor = 0x00000000;
+	public var giSamples:Int = 32;
 
 	public function new(view:N3DView)
 	{
@@ -59,7 +70,7 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		// bg.camera = this;
 		bgColor.alpha = 0;
 		globalIllum = new FlxSprite();
-		globalIllum.makeGraphic(view.width, view.height, 0x00D9FF);
+		globalIllum.makeGraphic(view.width, view.height, skyColor);
 		FlxG.state.add(globalIllum);
 		raytracer = new NebulaTracer();
 	}
@@ -191,7 +202,8 @@ class Raytracer implements ViewRenderer extends FlxCamera
 
 		var ray:Ray = {
 			pos: new Vector3D(view.camX, view.camY, view.camZ),
-			dir: dir
+			dir: dir,
+			energy: 1
 		};
 		return ray;
 	}
@@ -207,6 +219,102 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		return out;
 	}
 
+	public function traceRay(ray:Ray):{hit:Bool, color:FlxColor}
+	{
+		var color:FlxColor = 0x000000;
+		var res:TraceResult = raytracer.traceRay(ray);
+		if (res.hit)
+		{
+			var part = geom[res.geomID];
+			var hitPos = Vec3DHelper.add(ray.pos, Vec3DHelper.scale(ray.dir, res.distance));
+
+			for (light in lights)
+			{
+				var toLight = Vec3DHelper.subtract(light.pos, hitPos);
+				var dirToLight = Vec3DHelper.normalize(toLight);
+				var shadowRay:Ray = {
+					pos: Vec3DHelper.add(hitPos, Vec3DHelper.scale(dirToLight, 0.001)),
+					dir: dirToLight,
+					energy: 1
+				};
+
+				var shadowRes = raytracer.traceRay(shadowRay);
+				if (shadowRes.geomID == -1)
+				{
+					var diff = Vec3DHelper.subtract(light.pos, shadowRay.pos);
+					var distFalloff = 1.0 - (diff.length / light.power);
+					distFalloff = Math.max(0, distFalloff);
+					var shadowStrength = 1.0 - distFalloff;
+					var darkenedSkyColor = multiplyColorBrightness(skyColor, shadowStrength * 0.1);
+					var finalPartColor = FlxColor.interpolate(part.color, darkenedSkyColor, shadowStrength * 0.9);
+					color += FlxColor.interpolate(finalPartColor, light.color, distFalloff * 0.5);
+				}
+			}
+
+			for (bounce in 0...numBounces)
+			{
+				var triIndex = res.primID;
+				var i0 = part.indices[triIndex * 3];
+				var i1 = part.indices[triIndex * 3 + 1];
+				var i2 = part.indices[triIndex * 3 + 2];
+
+				var v0 = part.vertices[i0];
+				var v1 = part.vertices[i1];
+				var v2 = part.vertices[i2];
+
+				var edge1 = Vec3DHelper.subtract(v1, v0);
+				var edge2 = Vec3DHelper.subtract(v2, v0);
+				var normal = Vec3DHelper.normalize(Vec3DHelper.cross(edge1, edge2));
+				var reflectedRay:Ray = {
+					pos: hitPos,
+					dir: normal,
+					energy: 1
+				};
+				var reflectedTrace:TraceResult = raytracer.traceRay(reflectedRay);
+				if (reflectedTrace.hit)
+				{
+					var partColor:FlxColor = geom[reflectedTrace.geomID].color;
+					partColor.brightness -= bounce / numBounces;
+					color = FlxColor.interpolate(color, partColor, 0.5);
+				}
+				else
+				{
+					var finalSkyColor:FlxColor = skyColor;
+					finalSkyColor.brightness -= bounce / numBounces;
+					color = FlxColor.interpolate(color, finalSkyColor, 0.5);
+				}
+			}
+
+			return {hit: true, color: color};
+		}
+		else
+			return {hit: false, color: skyColor};
+	}
+
+	function averageColors(colors:Array<FlxColor>):FlxColor
+	{
+		if (colors.length == 0)
+			return 0;
+
+		var rSum = 0;
+		var gSum = 0;
+		var bSum = 0;
+
+		for (color in colors)
+		{
+			rSum += color.red;
+			gSum += color.green;
+			bSum += color.blue;
+		}
+
+		var len = colors.length;
+		var rAvg = Std.int(rSum / len);
+		var gAvg = Std.int(gSum / len);
+		var bAvg = Std.int(bSum / len);
+
+		return FlxColor.fromRGB(rAvg, gAvg, bAvg);
+	}
+
 	public var rendering = false;
 
 	public function renderScene()
@@ -215,13 +323,11 @@ class Raytracer implements ViewRenderer extends FlxCamera
 			return;
 		rendering = true;
 		geom = [];
-		globalIllum.pixels.fillRect(new Rectangle(0, 0, view.width, view.height), 0x00000000);
+		globalIllum.pixels.fillRect(new Rectangle(0, 0, view.width, view.height), skyColor);
 
 		for (mesh in view.meshes)
 			for (meshPart in mesh.meshParts)
 				geom.push(meshPart);
-	
-		trace(geom.length);
 
 		if (prevGeoms.length != 0)
 		{
@@ -249,28 +355,8 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		if (prevGeoms.length < 20)
 			prevGeoms.push(deepCopyGeom(geom));
 
-		var completed:Bool = false;
-		var output:Array<
-			{
-				ray:Ray,
-				hit:Bool,
-				geomID:Int,
-				dist:Float,
-				screenPos:Vector2
-			}> = [];
-		maxProg = view.width * view.height;
 		prog = 0;
-		// Thread.create(() ->
 		{
-			var results:Array<
-				{
-					ray:Ray,
-					hit:Bool,
-					geomID:Int,
-					dist:Float,
-					screenPos:Vector2
-				}> = [];
-			var giRes = giRes;
 			for (y in 0...view.height)
 			{
 				if (y % giRes != 0)
@@ -282,48 +368,18 @@ class Raytracer implements ViewRenderer extends FlxCamera
 						continue;
 
 					var ray = pixelToWorld(x, y);
-					mutex.acquire();
-					var res:TraceResult = raytracer.traceRay(ray);
-					// var res = {
-					// 	hit: false,
-					// 	geomID: 0,
-					// 	dist: 0.0
-					// }
-					mutex.release();
-					if (res.hit)
-					{
-						var part = geom[res.geomID];
-						var finalColor:FlxColor = 0xFF000000;
-						var light = lights[0];
-						var forward = new Vector3D(ray.dir.x * res.distance, ray.dir.y * res.distance, ray.dir.z * res.distance);
-						var hitPos = new Vector3D(ray.pos.x + forward.x, ray.pos.y + forward.y, ray.pos.z + forward.z);
-						var lightDir = new Vector3D(light.x - hitPos.x, light.y - hitPos.y, light.z - hitPos.z);
-						lightDir.normalize();
-						var shadowRay:Ray = {pos: Vec3DHelper.add(hitPos, lightDir), dir: lightDir};
-						var shadowRayRes = raytracer.traceRay(shadowRay);
-						if (shadowRayRes.geomID == -1)
-							finalColor += part.color;
-						globalIllum.pixels.fillRect(new Rectangle(x, y, giRes, giRes), finalColor);
-					}
-					else // my fps whyyyyy...
-						globalIllum.pixels.fillRect(new Rectangle(x, y, giRes, giRes), 0xFF00D9FF);
-					results.push({
-						ray: ray,
-						hit: res.hit,
-						geomID: res.geomID,
-						dist: res.distance,
-						screenPos: new Vector2(x, y)
-					});
+					var finalColor = FlxColor.BLACK;
+					var res = traceRay(ray);
+					finalColor = res.color;
+					finalColor.alpha = 255;
+					globalIllum.pixels.fillRect(new Rectangle(x, y, giRes, giRes), finalColor);
 					prog++;
 				}
 			}
-			mutex.acquire();
-			output = results;
-			completed = true;
-			mutex.release();
-		}//);
-		// while (!completed)
-		// 	Sys.sleep(0.001);
+		}
 		rendering = false;
 	}
+
+	function multiplyColorBrightness(color:FlxColor, brightness:Float):FlxColor
+		return FlxColor.fromRGB(Std.int(color.red * brightness), Std.int(color.green * brightness), Std.int(color.blue * brightness));
 }
