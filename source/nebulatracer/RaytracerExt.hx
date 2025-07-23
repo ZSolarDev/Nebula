@@ -1,11 +1,21 @@
 package nebulatracer;
 
+import hl.F32;
 import nebulatracer.Global.ExtDynamic;
 import nebulatracer.NebulaTracer.SimpleRay;
 import nebulatracer.native.Embree;
 
+class TraceResult {
+	public var hit:Bool;
+	public var distance:F32;
+	public var geomID:Int;
+
+	public function new() {}
+}
+
 class RaytracerExt
 {
+
 	public function new() {}
 
 	public function newRaytracer()
@@ -38,6 +48,8 @@ class RaytracerExt
 		Embree.load_geometry_embree(geometry, id);
 	}
 
-	public function traceRay(id:Int, ray:ExtDynamic<SimpleRay>):Dynamic
-		return Embree.trace_ray_embree(id, ray);
+	public function traceRay(id:Int, ray:SimpleRay):TraceResult {
+		var result = Embree.trace_ray_embree(id, ray);
+		return result;
+	}
 }

@@ -1,5 +1,7 @@
 package nebula.view.renderers;
 
+import nebula.utils.Vec3DHelper;
+import nebulatracer.RaytracerExt.TraceResult;
 import flixel.*;
 import flixel.graphics.FlxGraphic;
 import flixel.util.FlxColor;
@@ -218,6 +220,8 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		for (mesh in view.meshes)
 			for (meshPart in mesh.meshParts)
 				geom.push(meshPart);
+	
+		trace(geom.length);
 
 		if (prevGeoms.length != 0)
 		{
@@ -256,7 +260,7 @@ class Raytracer implements ViewRenderer extends FlxCamera
 			}> = [];
 		maxProg = view.width * view.height;
 		prog = 0;
-		Thread.create(() ->
+		// Thread.create(() ->
 		{
 			var results:Array<
 				{
@@ -279,18 +283,23 @@ class Raytracer implements ViewRenderer extends FlxCamera
 
 					var ray = pixelToWorld(x, y);
 					mutex.acquire();
-					var res = raytracer.traceRay(ray);
+					var res:TraceResult = raytracer.traceRay(ray);
+					// var res = {
+					// 	hit: false,
+					// 	geomID: 0,
+					// 	dist: 0.0
+					// }
 					mutex.release();
 					if (res.hit)
 					{
 						var part = geom[res.geomID];
 						var finalColor:FlxColor = 0xFF000000;
 						var light = lights[0];
-						var forward = new Vector3D(ray.dir.x * res.dist, ray.dir.y * res.dist, ray.dir.z * res.dist);
+						var forward = new Vector3D(ray.dir.x * res.distance, ray.dir.y * res.distance, ray.dir.z * res.distance);
 						var hitPos = new Vector3D(ray.pos.x + forward.x, ray.pos.y + forward.y, ray.pos.z + forward.z);
 						var lightDir = new Vector3D(light.x - hitPos.x, light.y - hitPos.y, light.z - hitPos.z);
 						lightDir.normalize();
-						var shadowRay:Ray = {pos: hitPos, dir: lightDir};
+						var shadowRay:Ray = {pos: Vec3DHelper.add(hitPos, lightDir), dir: lightDir};
 						var shadowRayRes = raytracer.traceRay(shadowRay);
 						if (shadowRayRes.geomID == -1)
 							finalColor += part.color;
@@ -302,7 +311,7 @@ class Raytracer implements ViewRenderer extends FlxCamera
 						ray: ray,
 						hit: res.hit,
 						geomID: res.geomID,
-						dist: res.dist,
+						dist: res.distance,
 						screenPos: new Vector2(x, y)
 					});
 					prog++;
@@ -312,9 +321,9 @@ class Raytracer implements ViewRenderer extends FlxCamera
 			output = results;
 			completed = true;
 			mutex.release();
-		});
-		while (!completed)
-			Sys.sleep(0.001);
+		}//);
+		// while (!completed)
+		// 	Sys.sleep(0.001);
 		rendering = false;
 	}
 }

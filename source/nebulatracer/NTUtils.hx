@@ -5,13 +5,14 @@ import nebulatracer.NebulaTracer.SimpleRay;
 
 class NTUtils
 {
-	public static function simplifyRay(ray:Ray):SimpleRay
-		return {
-			posx: ray.pos.x,
-			posy: ray.pos.y,
-			posz: ray.pos.z,
-			dirx: ray.dir.x,
-			diry: ray.dir.y,
-			dirz: ray.dir.z
-		};
+	public static function simplifyRay(ray:Ray):SimpleRay {
+		var simple = new SimpleRay();
+		simple.posx = ray.pos.x;
+		simple.posy = ray.pos.y;
+		simple.posz = ray.pos.z;
+		simple.dirx = ray.dir.x;
+		simple.diry = ray.dir.y;
+		simple.dirz = ray.dir.z;
+		return simple;
+	}
 }

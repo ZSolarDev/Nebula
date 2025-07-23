@@ -1,5 +1,7 @@
 package nebulatracer;
 
+import hl.F32;
+import nebulatracer.RaytracerExt.TraceResult;
 import haxe.Timer;
 import openfl.geom.Vector3D;
 
@@ -25,14 +27,16 @@ typedef Ray =
 /**
  * A simplified ray to interact directly with the externs.
  */
-typedef SimpleRay =
+class SimpleRay
 {
-	var posx:Float;
-	var posy:Float;
-	var posz:Float;
-	var dirx:Float;
-	var diry:Float;
-	var dirz:Float;
+	public var posx:F32;
+	public var posy:F32;
+	public var posz:F32;
+	public var dirx:F32;
+	public var diry:F32;
+	public var dirz:F32;
+
+	public function new() {}
 }
 
 /**
@@ -102,10 +106,10 @@ class NebulaTracer
 	 * Traces a ray.
 	 * @param ray The ray to trace with.
 	 */
-	public function traceRay(ray:Ray):{hit:Bool, dist:Float, geomID:Int}
+	public function traceRay(ray:Ray):TraceResult
 	{
 		var simpleRay = NTUtils.simplifyRay(ray);
-		return cast _raytracerExt.traceRay(_ID, simpleRay);
+		return _raytracerExt.traceRay(_ID, simpleRay);
 	}
 
 	/**

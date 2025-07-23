@@ -1,3 +1,2 @@
-﻿  embree.cpp
-  nebulatracer.vcxproj -> C:\Haxe-Libraries\Nebula\nebulatracer\x64\Debug\nebulatracer.dll
-          1 file(s) copied.
+﻿  nebulatracer.cpp
+D:\Dev-Arc2\Nebula\nebulatracer\nebulatracer.cpp(5,10): error C1083: Cannot open include file: 'GLFW/glfw3.h': No such file or directory
