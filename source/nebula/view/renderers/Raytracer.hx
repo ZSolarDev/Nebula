@@ -126,7 +126,17 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		}
 		var indexDiffRatio = indexDiff / a.indices.length;
 
-		var combined = 0.5 * scaledVertexDiff + 0.5 * indexDiffRatio;
+		var normalDiff:Float = 0;
+		for (i in 0...a.normals.length)
+		{
+			final na = a.normals[i];
+			final nb = b.normals[i];
+			normalDiff += Math.abs(na.x - nb.x) + Math.abs(na.y - nb.y) + Math.abs(na.z - nb.z);
+		}
+		normalDiff /= a.normals.length;
+		var scaledNormalDiff = Math.min(normalDiff / 10.0, 1.0);
+
+		var combined = 0.5 * scaledVertexDiff + 0.5 * indexDiffRatio + 0.5 * scaledNormalDiff;
 		return Math.min(combined, 1.0);
 	}
 
@@ -207,7 +217,7 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		var out = [];
 		for (part in source)
 		{
-			var copied = new MeshPart(part.vertices.copy(), part.indices.copy(), part.uvt.copy(), part.graphic, false);
+			var copied = new MeshPart(part.vertices.copy(), part.indices.copy(), part.uvt.copy(), part.normals.copy(), part.graphic, false);
 			out.push(copied);
 		}
 		return out;

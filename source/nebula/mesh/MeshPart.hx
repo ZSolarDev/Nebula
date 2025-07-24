@@ -14,15 +14,17 @@ class MeshPart
 	public var vertices:Vector<Vector3D> = new Vector<Vector3D>();
 	public var indices:Vector<Int> = new Vector<Int>();
 	public var uvt:Vector<Float> = new Vector<Float>();
+	public var normals:Vector<Vector3D> = new Vector<Vector3D>();
 	public var useColor:Bool = false;
 	public var color(default, set):Int = 0xFFFFFFFF;
 	public var graphic(default, set):String = '';
-	public var raytracingProperties:{
-		reflectiveness:Float,
-		emissiveness:Float,
-		lightPointers:Array<Light>,
-		isEmitter:Bool
-	};
+	public var raytracingProperties:
+		{
+			reflectiveness:Float,
+			emissiveness:Float,
+			lightPointers:Array<Light>,
+			isEmitter:Bool
+		};
 
 	function set_color(val:Int):Int
 	{
@@ -55,11 +57,12 @@ class MeshPart
 	@:allow(nebula.view.renderers.ViewRenderer)
 	private var _graphic:FlxGraphic;
 
-	public function new(vertices:Vector<Vector3D>, indices:Vector<Int>, uvt:Vector<Float>, graphic:String, ?setGraphic:Bool = true)
+	public function new(vertices:Vector<Vector3D>, indices:Vector<Int>, uvt:Vector<Float>, normals:Vector<Vector3D>, graphic:String, ?setGraphic:Bool = true)
 	{
 		this.vertices = vertices;
 		this.indices = indices;
 		this.uvt = uvt;
+		this.normals = normals;
 		if (setGraphic)
 			this.graphic = graphic;
 	}

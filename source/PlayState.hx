@@ -184,14 +184,14 @@ class PlayState extends FlxState
 				};
 				view.pushMesh(new Mesh(0, 0, 0, [sphere1, sphere2]));
 
-				var lightSize = 40.0;
+				var lightSize = 200.0;
 				var lightY = 0;
 				lightY -= cast wallSize / 2;
 				lightY += 10;
 				var light = makeQuad(-lightSize / 2, -wallSize + 0.1, -lightSize / 2, lightSize, lightSize, FlxColor.WHITE, XZ);
 				light.raytracingProperties = {
 					reflectiveness: 0,
-					emissiveness: 100,
+					emissiveness: 1,
 					isEmitter: true,
 					lightPointers: [
 						{
@@ -261,7 +261,7 @@ class PlayState extends FlxState
 
 	function createSphereMesh(x:Float, y:Float, z:Float, radius:Float, color:Int, latSteps:Int = 6, lonSteps:Int = 6):MeshPart
 	{
-		var part = new MeshPart(new Vector<Vector3D>(), new Vector<Int>(), new Vector<Float>(), '');
+		var part = new MeshPart(new Vector<Vector3D>(), new Vector<Int>(), new Vector<Float>(), new Vector<Vector3D>(), '');
 		part.color = color;
 
 		for (lat in 0...latSteps + 1)
@@ -281,6 +281,12 @@ class PlayState extends FlxState
 				var pz = z + radius * sinTheta * sinPhi;
 
 				part.vertices.push(new Vector3D(px, py, pz));
+				var nx = px - x;
+				var ny = py - y;
+				var nz = pz - z;
+				var normal = new Vector3D(nx, ny, nz);
+				normal.normalize();
+				part.normals.push(normal);
 			}
 		}
 
@@ -307,7 +313,7 @@ class PlayState extends FlxState
 
 	function makeQuad(x:Float, y:Float, z:Float, sizeX:Float, sizeY:Float, color:Int, plane:Plane, backFace:Bool = false):MeshPart
 	{
-		var part = new MeshPart(new Vector<Vector3D>(), new Vector<Int>(), new Vector<Float>(), '');
+		var part = new MeshPart(new Vector<Vector3D>(), new Vector<Int>(), new Vector<Float>(), new Vector<Vector3D>(), '');
 		part.color = color;
 
 		var v1:Vector3D;
@@ -347,6 +353,8 @@ class PlayState extends FlxState
 			part.indices.push(0);
 			part.indices.push(3);
 			part.indices.push(2);
+
+			part.normals.push(new Vector3D(0, 0, 1));
 		}
 		else
 		{
@@ -356,6 +364,8 @@ class PlayState extends FlxState
 			part.indices.push(0);
 			part.indices.push(2);
 			part.indices.push(3);
+
+			part.normals.push(new Vector3D(0, 0, -1));
 		}
 
 		return part;
@@ -374,7 +384,7 @@ class PlayState extends FlxState
 				var y = j * tileSize;
 				var color = ((i + j) % 2 == 0) ? FlxColor.WHITE : FlxColor.BLACK;
 
-				var part = new MeshPart(new Vector<Vector3D>(), new Vector<Int>(), new Vector<Float>(), '');
+				var part = new MeshPart(new Vector<Vector3D>(), new Vector<Int>(), new Vector<Float>(), new Vector<Vector3D>(), '');
 				part.color = color;
 				part.raytracingProperties = {
 					reflectiveness: 0.1,
@@ -395,6 +405,8 @@ class PlayState extends FlxState
 				part.indices.push(0);
 				part.indices.push(2);
 				part.indices.push(3);
+
+				part.normals.push(new Vector3D(0, 1, 0));
 
 				parts.push(part);
 			}
