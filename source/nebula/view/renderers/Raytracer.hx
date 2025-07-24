@@ -219,6 +219,77 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		return out;
 	}
 
+	function generateHemisphereSamples(num:Int):Array<Vector3D>
+	{
+		var samples = new Array<Vector3D>();
+		var offset = 2.0 / num;
+		var increment = Math.PI * (3.0 - Math.sqrt(5.0));
+		for (i in 0...num)
+		{
+			var y = 1.0 - (i * offset);
+			var r = Math.sqrt(1.0 - y * y);
+			var phi = i * increment;
+			var x = Math.cos(phi) * r;
+			var z = Math.sin(phi) * r;
+			samples.push(new Vector3D(x, y, z));
+		}
+		return samples;
+	}
+
+	static function getTriangleNormal(part:MeshPart, primID:Int):Vector3D
+	{
+		var i0 = part.indices[primID * 3];
+		var i1 = part.indices[primID * 3 + 1];
+		var i2 = part.indices[primID * 3 + 2];
+
+		var v0 = part.vertices[i0];
+		var v1 = part.vertices[i1];
+		var v2 = part.vertices[i2];
+
+		var edge1 = Vec3DHelper.subtract(v1, v0);
+		var edge2 = Vec3DHelper.subtract(v2, v0);
+
+		var normal = Vec3DHelper.cross(edge1, edge2);
+		return Vec3DHelper.normalize(normal);
+	}
+
+	function generateConeSamples(dirToLight:Vector3D, coneAngle:Float, sampleCount:Int):Array<Vector3D>
+	{
+		var samples = new Array<Vector3D>();
+
+		// Create coordinate frame (tangent, bitangent) orthogonal to dirToLight
+		var up = Math.abs(dirToLight.y) < 0.999 ? new Vector3D(0, 1, 0) : new Vector3D(1, 0, 0);
+		var tangent = Vec3DHelper.normalize(Vec3DHelper.cross(dirToLight, up));
+		var bitangent = Vec3DHelper.normalize(Vec3DHelper.cross(tangent, dirToLight));
+
+		for (i in 0...sampleCount)
+		{
+			// Use Fibonacci sphere or other method for evenly spaced points on hemisphere section
+
+			// Fibonacci sphere point:
+			var phi = (i + 0.5) / sampleCount * Math.PI * 2; // angle around cone axis
+			var cosTheta = 1 - (i + 0.5) / sampleCount * (1 - Math.cos(coneAngle)); // map sample index to cosTheta in [cos(coneAngle), 1]
+			var sinTheta = Math.sqrt(1 - cosTheta * cosTheta);
+
+			// Local sample direction in tangent space:
+			var sampleDir = new Vector3D(Math.cos(phi) * sinTheta, cosTheta, Math.sin(phi) * sinTheta);
+
+			var worldDir = new Vector3D(tangent.x * sampleDir.x
+				+ dirToLight.x * sampleDir.y
+				+ bitangent.x * sampleDir.z,
+				tangent.y * sampleDir.x
+				+ dirToLight.y * sampleDir.y
+				+ bitangent.y * sampleDir.z,
+				tangent.z * sampleDir.x
+				+ dirToLight.z * sampleDir.y
+				+ bitangent.z * sampleDir.z);
+
+			samples.push(Vec3DHelper.normalize(worldDir));
+		}
+
+		return samples;
+	}
+
 	public function traceRay(ray:Ray):{hit:Bool, color:FlxColor}
 	{
 		var color:FlxColor = 0x000000;
@@ -227,68 +298,114 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		{
 			var part = geom[res.geomID];
 			var hitPos = Vec3DHelper.add(ray.pos, Vec3DHelper.scale(ray.dir, res.distance));
-
 			for (light in lights)
 			{
 				var toLight = Vec3DHelper.subtract(light.pos, hitPos);
 				var dirToLight = Vec3DHelper.normalize(toLight);
-				var shadowRay:Ray = {
-					pos: Vec3DHelper.add(hitPos, Vec3DHelper.scale(dirToLight, 0.001)),
-					dir: dirToLight,
-					energy: 1
-				};
+				var coneAngle = 0.1; // ~5.7 degrees cone (adjust to taste)
+				var shadowSamples = 16;
+				var litCount = 0;
 
-				var shadowRes = raytracer.traceRay(shadowRay);
-				if (shadowRes.geomID == -1)
+				var coneSampleDirs = generateConeSamples(dirToLight, coneAngle, shadowSamples);
+
+				for (sampleDir in coneSampleDirs)
 				{
-					var diff = Vec3DHelper.subtract(light.pos, shadowRay.pos);
-					var distFalloff = 1.0 - (diff.length / light.power);
-					distFalloff = Math.max(0, distFalloff);
-					var shadowStrength = 1.0 - distFalloff;
-					var darkenedSkyColor = multiplyColorBrightness(skyColor, shadowStrength * 0.1);
-					var finalPartColor = FlxColor.interpolate(part.color, darkenedSkyColor, shadowStrength * 0.9);
-					color += FlxColor.interpolate(finalPartColor, light.color, distFalloff * 0.5);
+					var shadowRay:Ray = {
+						pos: Vec3DHelper.add(hitPos, Vec3DHelper.scale(sampleDir, 0.001)),
+						dir: sampleDir,
+						energy: 1
+					};
+
+					var shadowRes = raytracer.traceRay(shadowRay);
+					if (shadowRes.geomID == -1)
+						litCount++;
 				}
+
+				var shadowStrength = litCount / shadowSamples; // between 0 (fully shadowed) and 1 (fully lit)
+
+				// Use shadowStrength to scale light contribution smoothly
+				var diff = Vec3DHelper.subtract(light.pos, hitPos);
+				var distFalloff = 1.0 - (diff.length / light.power);
+				distFalloff = Math.max(0, distFalloff);
+
+				var darkenedSkyColor = multiplyColorBrightness(skyColor, (1 - shadowStrength) * 0.1);
+				var finalPartColor = FlxColor.interpolate(part.color, darkenedSkyColor, (1 - shadowStrength) * 0.9);
+				color += FlxColor.interpolate(finalPartColor, light.color, distFalloff * 0.3 * shadowStrength);
 			}
+			// Generate hemisphere samples once (or cache it)
+			var hemisphereSamples = generateHemisphereSamples(32);
 
-			for (bounce in 0...numBounces)
+			var colors = [];
+			// Accumulate lighting from fixed hemisphere directions (bounce lighting)
+			for (sample in hemisphereSamples)
 			{
-				var triIndex = res.primID;
-				var i0 = part.indices[triIndex * 3];
-				var i1 = part.indices[triIndex * 3 + 1];
-				var i2 = part.indices[triIndex * 3 + 2];
+				var normal = getTriangleNormal(part, res.primID);
+				var sampleDir = alignSampleToNormal(sample, normal);
 
-				var v0 = part.vertices[i0];
-				var v1 = part.vertices[i1];
-				var v2 = part.vertices[i2];
-
-				var edge1 = Vec3DHelper.subtract(v1, v0);
-				var edge2 = Vec3DHelper.subtract(v2, v0);
-				var normal = Vec3DHelper.normalize(Vec3DHelper.cross(edge1, edge2));
-				var reflectedRay:Ray = {
-					pos: hitPos,
-					dir: normal,
-					energy: 1
+				// Create a bounce ray from hit point along sampleDir
+				var bounceRay:Ray = {
+					pos: Vec3DHelper.add(hitPos, Vec3DHelper.scale(sampleDir, 0.001)),
+					dir: sampleDir,
+					energy: ray.energy * 0.5 // simple energy falloff for bounce
 				};
-				var reflectedTrace:TraceResult = raytracer.traceRay(reflectedRay);
-				if (reflectedTrace.hit)
+
+				// Trace bounce ray for indirect lighting
+				var bounceRes = raytracer.traceRay(bounceRay);
+				if (bounceRes.hit)
 				{
-					var partColor:FlxColor = geom[reflectedTrace.geomID].color;
-					partColor.brightness -= bounce / numBounces;
-					color = FlxColor.interpolate(color, partColor, 0.5);
+					var bouncePart = geom[bounceRes.geomID];
+
+					// Calculate diffuse lighting from this bounce sample
+					var ndotl = Math.max(0, Vec3DHelper.dot(sampleDir, normal));
+					var bounceLight = multiplyColorBrightness(bouncePart.color, ndotl);
+
+					// Accumulate color
+					colors.push(bounceLight);
 				}
 				else
 				{
-					var finalSkyColor:FlxColor = skyColor;
-					finalSkyColor.brightness -= bounce / numBounces;
-					color = FlxColor.interpolate(color, finalSkyColor, 0.5);
+					// No hit means environment lighting (sky)
+					var ndotl = Math.max(0, Vec3DHelper.dot(sampleDir, normal));
+					var envLight = multiplyColorBrightness(skyColor, ndotl * 0.3);
+					colors.push(envLight);
 				}
 			}
+
+			var bounceLight = averageColors(colors);
+			color = FlxColor.add(color, multiplyColorBrightness(bounceLight, 1.5));
 
 			return {hit: true, color: color};
 		}
 		else
+		{
 			return {hit: false, color: skyColor};
+		}
+	}
+
+	function reflect(dir:Vector3D, normal:Vector3D):Vector3D
+	{
+		var dot = Vec3DHelper.dot(dir, normal);
+		return Vec3DHelper.subtract(dir, Vec3DHelper.scale(normal, 2 * dot));
+	}
+
+	static function alignSampleToNormal(sample:Vector3D, normal:Vector3D):Vector3D
+	{
+		// Build tangent and bitangent vectors
+		var up = Math.abs(normal.y) < 0.999 ? new Vector3D(0, 1, 0) : new Vector3D(1, 0, 0);
+		var tangent = Vec3DHelper.normalize(Vec3DHelper.cross(normal, up));
+		var bitangent = Vec3DHelper.normalize(Vec3DHelper.cross(normal, tangent));
+
+		// Transform sample from tangent space to world space
+		var worldSample = new Vector3D(tangent.x * sample.x
+			+ bitangent.x * sample.z
+			+ normal.x * sample.y,
+			tangent.y * sample.x
+			+ bitangent.y * sample.z
+			+ normal.y * sample.y, tangent.z * sample.x
+			+ bitangent.z * sample.z
+			+ normal.z * sample.y);
+
+		return Vec3DHelper.normalize(worldSample);
 	}
 
 	function averageColors(colors:Array<FlxColor>):FlxColor

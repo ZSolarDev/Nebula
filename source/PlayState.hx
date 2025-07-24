@@ -14,6 +14,19 @@ import sys.thread.Thread;
 
 using StringTools;
 
+enum Plane
+{
+	XY;
+	XZ;
+	YZ;
+}
+
+enum abstract TestSceneType(Int)
+{
+	var THREE_SPHERES = 0;
+	var CORNELL_BOX = 1;
+}
+
 class PlayState extends FlxState
 {
 	var cpuRaytracer:Raytracer;
@@ -21,6 +34,86 @@ class PlayState extends FlxState
 	var view:N3DView;
 	var controls:FlxText;
 	var cam:FlxCamera;
+	var scene(default, set):TestSceneType;
+	var maxScenes = 2;
+
+	function set_scene(val:TestSceneType):TestSceneType
+	{
+		scene = val;
+		cpuRaytracer.lights = [];
+		view.camX = 0;
+		view.camY = 0;
+		view.camZ = 0;
+		view.camPitch = 0;
+		view.camYaw = 0;
+		view.meshes = [];
+		switch (val)
+		{
+			case THREE_SPHERES:
+				var sphereDetail = 20;
+				view.camX = -142.09870267358;
+				view.camY = -186.576563254764;
+				view.camZ = 246.719622723706;
+				view.camPitch = 0.605;
+				view.camYaw = 0.45;
+
+				var floorParts = createCheckerFloor(8, 40);
+				view.pushMesh(new Mesh(0, 0, 0, floorParts));
+
+				// Spheres
+				var radius = 20;
+				var redSphere = createSphereMesh(-80, -radius, 20, radius, FlxColor.RED, sphereDetail, sphereDetail);
+				redSphere.raytracingProperties = {reflectiveness: 1, lightness: 0};
+				var greenSphere = createSphereMesh(0, -radius, 20, radius, FlxColor.GREEN, sphereDetail, sphereDetail);
+				greenSphere.raytracingProperties = {reflectiveness: 1, lightness: 0};
+				var blueSphere = createSphereMesh(80, -radius, 20, radius, FlxColor.BLUE, sphereDetail, sphereDetail);
+				blueSphere.raytracingProperties = {reflectiveness: 1, lightness: 0};
+
+				view.pushMesh(new Mesh(0, 0, 1, [redSphere, greenSphere, blueSphere]));
+
+				// Sun sphere
+				var sun = createSphereMesh(0, -150, -150, 30, FlxColor.YELLOW, sphereDetail, sphereDetail);
+				sun.raytracingProperties = {reflectiveness: 0, lightness: 1};
+				// view.pushMesh(new Mesh(0, 0, 1, [sun]));
+				cpuRaytracer.lights.push({pos: new Vector3D(0, -150, -150), color: FlxColor.YELLOW, power: 320});
+				cpuRaytracer.lights.push({pos: new Vector3D(0, -150, 300), color: FlxColor.YELLOW, power: 320});
+			case CORNELL_BOX:
+				var sphereDetail = 20;
+
+				// Camera inside the box, looking forward (-Z)
+				view.camX = 0;
+				view.camY = 0;
+				view.camZ = 200;
+				view.camPitch = 0;
+				view.camYaw = 0;
+
+				var wallSize = 100.0;
+
+				var floor = makeQuad(-wallSize, -wallSize, -wallSize, wallSize * 2, wallSize * 2, FlxColor.WHITE, XZ);
+				var ceiling = makeQuad(-wallSize, wallSize, -wallSize, wallSize * 2, wallSize * 2, FlxColor.WHITE, XZ);
+				var backWall = makeQuad(-wallSize, -wallSize, -wallSize, wallSize * 2, wallSize * 2, FlxColor.WHITE, XY);
+				var leftWall = makeQuad(-wallSize, -wallSize, -wallSize, wallSize * 2, wallSize * 2, FlxColor.RED, YZ);
+				var rightWall = makeQuad(wallSize, -wallSize, -wallSize, wallSize * 2, wallSize * 2, FlxColor.GREEN, YZ);
+
+				view.pushMesh(new Mesh(0, 0, 0, [floor, ceiling, backWall, leftWall, rightWall]));
+
+				var radius1 = 60;
+				var radius2 = 40;
+				var sphere1 = createSphereMesh(-30, wallSize - radius1, -30, radius1, FlxColor.WHITE, sphereDetail, sphereDetail);
+				var sphere2 = createSphereMesh(40, wallSize - radius2, 30, radius2, FlxColor.WHITE, sphereDetail, sphereDetail);
+				view.pushMesh(new Mesh(0, 0, 1, [sphere1, sphere2]));
+
+				var lightY = 0;
+				lightY -= cast wallSize / 2;
+				lightY += 10;
+				cpuRaytracer.lights.push({
+					pos: new Vector3D(0, lightY, 100),
+					color: FlxColor.WHITE,
+					power: 100
+				});
+		}
+		return val;
+	}
 
 	override public function new(?separated:Bool = true)
 	{
@@ -41,6 +134,7 @@ class PlayState extends FlxState
         Shift: Down
         Hold Left Mouse Button: Look
         -----Config-----
+        J: Switches the scene
         R: Set separated to ${!separated}(reloads scene)
         Separated: $separated');
 		controls.text += separated ? '
@@ -70,38 +164,7 @@ class PlayState extends FlxState
 		cam.bgColor.alpha = 0;
 		FlxG.cameras.add(cam, false);
 		controls.camera = cam;
-		initializeScene();
-	}
-
-	function initializeScene()
-	{
-		var sphereDetail = 6; // 20 is high, 6 is low
-		view.camX = -142.09870267358;
-		view.camY = -186.576563254764;
-		view.camZ = 246.719622723706;
-		view.camPitch = 0.605;
-		view.camYaw = 0.45;
-
-		var floorParts = createCheckerFloor(8, 40);
-		view.pushMesh(new Mesh(0, 0, 0, floorParts));
-
-		// Spheres
-		var radius = 20;
-		var redSphere = createSphereMesh(-80, -radius, 20, radius, FlxColor.RED, sphereDetail, sphereDetail);
-		redSphere.raytracingProperties = {reflectiveness: 1, lightness: 0};
-		var greenSphere = createSphereMesh(0, -radius, 20, radius, FlxColor.GREEN, sphereDetail, sphereDetail);
-		greenSphere.raytracingProperties = {reflectiveness: 1, lightness: 0};
-		var blueSphere = createSphereMesh(80, -radius, 20, radius, FlxColor.BLUE, sphereDetail, sphereDetail);
-		blueSphere.raytracingProperties = {reflectiveness: 1, lightness: 0};
-
-		view.pushMesh(new Mesh(0, 0, 1, [redSphere, greenSphere, blueSphere]));
-
-		// Sun sphere
-		var sun = createSphereMesh(0, -150, -150, 30, FlxColor.YELLOW, sphereDetail, sphereDetail);
-		sun.raytracingProperties = {reflectiveness: 0, lightness: 1};
-		// view.pushMesh(new Mesh(0, 0, 1, [sun]));
-		cpuRaytracer.lights.push({pos: new Vector3D(0, -150, -150), color: FlxColor.YELLOW, power: 320});
-		cpuRaytracer.lights.push({pos: new Vector3D(0, -150, 300), color: FlxColor.YELLOW, power: 320});
+		scene = CORNELL_BOX;
 	}
 
 	function createSphereMesh(x:Float, y:Float, z:Float, radius:Float, color:Int, latSteps:Int = 6, lonSteps:Int = 6):MeshPart
@@ -145,6 +208,63 @@ class PlayState extends FlxState
 				part.indices.push(b + 1);
 				part.indices.push(a + 1);
 			}
+		}
+
+		return part;
+	}
+
+	function makeQuad(x:Float, y:Float, z:Float, sizeX:Float, sizeY:Float, color:Int, plane:Plane, backFace:Bool = false):MeshPart
+	{
+		var part = new MeshPart(new Vector<Vector3D>(), new Vector<Int>(), new Vector<Float>(), '');
+		part.color = color;
+		part.raytracingProperties = {reflectiveness: 0, lightness: 0};
+
+		var v1:Vector3D;
+		var v2:Vector3D;
+		var v3:Vector3D;
+		var v4:Vector3D;
+
+		switch (plane)
+		{
+			case XY:
+				v1 = new Vector3D(x, y, z);
+				v2 = new Vector3D(x + sizeX, y, z);
+				v3 = new Vector3D(x + sizeX, y + sizeY, z);
+				v4 = new Vector3D(x, y + sizeY, z);
+			case XZ:
+				v1 = new Vector3D(x, y, z);
+				v2 = new Vector3D(x + sizeX, y, z);
+				v3 = new Vector3D(x + sizeX, y, z + sizeY);
+				v4 = new Vector3D(x, y, z + sizeY);
+			case YZ:
+				v1 = new Vector3D(x, y, z);
+				v2 = new Vector3D(x, y + sizeX, z);
+				v3 = new Vector3D(x, y + sizeX, z + sizeY);
+				v4 = new Vector3D(x, y, z + sizeY);
+		}
+
+		part.vertices.push(v1);
+		part.vertices.push(v2);
+		part.vertices.push(v3);
+		part.vertices.push(v4);
+
+		if (backFace)
+		{
+			part.indices.push(0);
+			part.indices.push(2);
+			part.indices.push(1);
+			part.indices.push(0);
+			part.indices.push(3);
+			part.indices.push(2);
+		}
+		else
+		{
+			part.indices.push(0);
+			part.indices.push(1);
+			part.indices.push(2);
+			part.indices.push(0);
+			part.indices.push(2);
+			part.indices.push(3);
 		}
 
 		return part;
@@ -241,11 +361,16 @@ class PlayState extends FlxState
 				view.render = !view.render;
 			}
 		}
-		if (FlxG.keys.justPressed.R)
+		if (FlxG.keys.justPressed.R && !cpuRaytracer.rendering)
 			FlxG.switchState(() -> new PlayState(!separated));
+		else if (FlxG.keys.justPressed.R && cpuRaytracer.rendering)
+			trace('Rendering, please wait for it to finish before switching modes.');
 		if (FlxG.keys.justPressed.MINUS && !separated)
 			cpuRaytracer.giRes -= 1;
 		if (FlxG.keys.justPressed.PLUS && !separated)
 			cpuRaytracer.giRes += 1;
+
+		if (FlxG.keys.justPressed.J)
+			scene = cast(cast(scene, Int) + 1) % maxScenes;
 	}
 }
