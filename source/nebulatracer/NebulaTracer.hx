@@ -22,7 +22,6 @@ typedef Ray =
 {
 	var pos:Vector3D;
 	var dir:Vector3D;
-	var energy:Float;
 }
 
 /**

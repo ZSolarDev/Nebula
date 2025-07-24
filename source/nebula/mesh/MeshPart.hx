@@ -2,6 +2,7 @@ package nebula.mesh;
 
 import flixel.graphics.FlxGraphic;
 import lime.utils.Log;
+import nebula.view.renderers.Raytracer.Light;
 import openfl.Vector;
 import openfl.display.BitmapData;
 import openfl.display.BlendMode;
@@ -16,7 +17,12 @@ class MeshPart
 	public var useColor:Bool = false;
 	public var color(default, set):Int = 0xFFFFFFFF;
 	public var graphic(default, set):String = '';
-	public var raytracingProperties:{reflectiveness:Float, lightness:Float};
+	public var raytracingProperties:{
+		reflectiveness:Float,
+		emissiveness:Float,
+		lightPointers:Array<Light>,
+		isEmitter:Bool
+	};
 
 	function set_color(val:Int):Int
 	{

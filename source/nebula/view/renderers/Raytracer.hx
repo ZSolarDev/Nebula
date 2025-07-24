@@ -1,24 +1,16 @@
 package nebula.view.renderers;
 
 import flixel.*;
-import flixel.graphics.FlxGraphic;
-import flixel.math.FlxMath;
 import flixel.util.FlxColor;
 import haxe.Json;
-import hlwnative.HLApplicationStatus;
-import lime.math.Vector2;
-import lime.utils.Log;
 import nebula.mesh.MeshPart;
+import nebula.tonemapper.*;
 import nebula.utils.Vec3DHelper;
 import nebulatracer.NebulaTracer;
 import nebulatracer.RaytracerExt.TraceResult;
-import openfl.display.BitmapData;
-import openfl.geom.Point;
 import openfl.geom.Rectangle;
 import openfl.geom.Vector3D;
-import sys.FileSystem;
 import sys.thread.Mutex;
-import sys.thread.Thread;
 
 typedef Geometry =
 {
@@ -41,6 +33,7 @@ typedef Light =
 	var pos:Vector3D;
 	var color:FlxColor;
 	var power:Float;
+	var meshPart:MeshPart;
 }
 
 class Raytracer implements ViewRenderer extends FlxCamera
@@ -58,6 +51,8 @@ class Raytracer implements ViewRenderer extends FlxCamera
 	public var lights:Array<Light> = [];
 	public var skyColor:FlxColor = 0x00000000;
 	public var giSamples:Int = 32;
+	public var tonemapper:Tonemapper = new ClampTonemapper();
+	public var hemisphereRandomness = 0.1;
 
 	public function new(view:N3DView)
 	{
@@ -202,8 +197,7 @@ class Raytracer implements ViewRenderer extends FlxCamera
 
 		var ray:Ray = {
 			pos: new Vector3D(view.camX, view.camY, view.camZ),
-			dir: dir,
-			energy: 1
+			dir: dir
 		};
 		return ray;
 	}
@@ -224,15 +218,31 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		var samples = new Array<Vector3D>();
 		var offset = 2.0 / num;
 		var increment = Math.PI * (3.0 - Math.sqrt(5.0));
+
 		for (i in 0...num)
 		{
-			var y = 1.0 - (i * offset);
-			var r = Math.sqrt(1.0 - y * y);
-			var phi = i * increment;
-			var x = Math.cos(phi) * r;
-			var z = Math.sin(phi) * r;
-			samples.push(new Vector3D(x, y, z));
+			var y_base = 1.0 - (i * offset);
+			var r_base = Math.sqrt(1.0 - y_base * y_base);
+			var phi_base = i * increment;
+			var x_base = Math.cos(phi_base) * r_base;
+			var z_base = Math.sin(phi_base) * r_base;
+
+			var u = Math.random();
+			var v = Math.random();
+			var theta = 2.0 * Math.PI * u;
+			var y_rand = v;
+			var r_rand = Math.sqrt(1.0 - y_rand * y_rand);
+			var x_rand = Math.cos(theta) * r_rand;
+			var z_rand = Math.sin(theta) * r_rand;
+
+			var x = x_base * (1.0 - hemisphereRandomness) + x_rand * hemisphereRandomness;
+			var y = y_base * (1.0 - hemisphereRandomness) + y_rand * hemisphereRandomness;
+			var z = z_base * (1.0 - hemisphereRandomness) + z_rand * hemisphereRandomness;
+
+			var len = Math.sqrt(x * x + y * y + z * z);
+			samples.push(new Vector3D(x / len, y / len, z / len));
 		}
+
 		return samples;
 	}
 
@@ -285,48 +295,54 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		return samples;
 	}
 
-	public function traceRay(ray:Ray):{hit:Bool, color:FlxColor}
+	public function traceRay(ray:Ray):{hit:Bool, color:FloatColor}
 	{
-		var color:FlxColor = 0x000000;
+		var color:FloatColor = new FloatColor(0, 0, 0);
 		var res:TraceResult = raytracer.traceRay(ray);
 		if (res.hit)
 		{
 			var part = geom[res.geomID];
-			var hitPos = Vec3DHelper.add(ray.pos, Vec3DHelper.scale(ray.dir, res.distance));
-			for (light in lights)
+			var hitPos = Vec3DHelper.add(ray.pos, Vec3DHelper.multiplyScalar(ray.dir, res.distance));
+			if (part.raytracingProperties.isEmitter)
+				color = FloatColor.fromFlxColor(part.color);
+			else
 			{
-				var toLight = Vec3DHelper.subtract(light.pos, hitPos);
-				var dirToLight = Vec3DHelper.normalize(toLight);
-				var coneAngle = 0.1; // ~5.7 degrees cone
-				var shadowSamples = 16;
-				var litCount = 0;
-
-				var coneSampleDirs = generateConeSamples(dirToLight, coneAngle, shadowSamples);
-
-				for (sampleDir in coneSampleDirs)
+				for (light in lights)
 				{
-					var shadowRay:Ray = {
-						pos: Vec3DHelper.add(hitPos, Vec3DHelper.scale(sampleDir, 0.001)),
-						dir: sampleDir,
-						energy: 1
-					};
+					var toLight = Vec3DHelper.subtract(light.pos, hitPos);
+					var dirToLight = Vec3DHelper.normalize(toLight);
+					var coneAngle = 0.1; // ~5.7 degrees cone
+					var shadowSamples = 16;
+					var litCount = 0;
 
-					var shadowRes = raytracer.traceRay(shadowRay);
-					if (shadowRes.geomID == -1)
-						litCount++;
+					var coneSampleDirs = generateConeSamples(dirToLight, coneAngle, shadowSamples);
+
+					for (sampleDir in coneSampleDirs)
+					{
+						var shadowRay:Ray = {
+							pos: Vec3DHelper.add(hitPos, Vec3DHelper.multiplyScalar(sampleDir, 0.001)),
+							dir: sampleDir
+						};
+
+						var shadowRes = raytracer.traceRay(shadowRay);
+						if (shadowRes.hit)
+							if (geom[shadowRes.geomID] == light.meshPart)
+								litCount++;
+					}
+
+					var shadowStrength = litCount / shadowSamples; // between 0 and 1
+
+					var diff = Vec3DHelper.subtract(light.pos, hitPos);
+					var distFalloff = 1.0 - (diff.length / light.power);
+					distFalloff = Math.max(0, distFalloff);
+					var darkenedSkyColor = FloatColor.multiplyFloat(FloatColor.fromFlxColor(skyColor), (1 - shadowStrength) * 0.1);
+					var finalPartColor = FloatColor.lerpColor(FloatColor.fromFlxColor(part.color), darkenedSkyColor, (1 - shadowStrength) * 0.9);
+					var baseDarkened = FloatColor.multiplyFloat(finalPartColor, distFalloff + 0.001);
+					var lightIntensity = distFalloff * shadowStrength;
+					lightIntensity = Math.min(1, lightIntensity / 10);
+					color = FloatColor.addColor(color, FloatColor.lerpColor(baseDarkened, FloatColor.fromFlxColor(light.color), lightIntensity));
 				}
-
-				var shadowStrength = litCount / shadowSamples; // between 0 and 1
-
-				var diff = Vec3DHelper.subtract(light.pos, hitPos);
-				var distFalloff = 1.0 - (diff.length / light.power);
-				distFalloff = Math.max(0, distFalloff);
-
-				var darkenedSkyColor = multiplyColorBrightness(skyColor, (1 - shadowStrength) * 0.1);
-				var finalPartColor = FlxColor.interpolate(part.color, darkenedSkyColor, (1 - shadowStrength) * 0.9);
-				color += FlxColor.interpolate(finalPartColor, light.color, distFalloff * 0.3 * shadowStrength);
 			}
-
 			var hemisphereSamples = generateHemisphereSamples(32);
 
 			var colors = [];
@@ -336,40 +352,39 @@ class Raytracer implements ViewRenderer extends FlxCamera
 				var sampleDir = alignSampleToNormal(sample, normal);
 
 				var bounceRay:Ray = {
-					pos: Vec3DHelper.add(hitPos, Vec3DHelper.scale(sampleDir, 0.001)),
-					dir: sampleDir,
-					energy: ray.energy * 0.5
+					pos: Vec3DHelper.add(hitPos, Vec3DHelper.multiplyScalar(sampleDir, 0.001)),
+					dir: sampleDir
 				};
 
 				var bounceRes = raytracer.traceRay(bounceRay);
 				if (bounceRes.hit)
 				{
 					var bouncePart = geom[bounceRes.geomID];
-					colors.push(bouncePart.color);
+					colors.push(FloatColor.fromFlxColor(bouncePart.color));
 				}
 				else
 				{
 					var ndotl = Math.max(0, Vec3DHelper.dot(sampleDir, normal));
-					var envLight = multiplyColorBrightness(skyColor, ndotl * 0.3);
+					var envLight = FloatColor.multiplyFloat(FloatColor.fromFlxColor(skyColor), ndotl * 0.3);
 					colors.push(envLight);
 				}
 			}
 
 			var bounceLight = averageColors(colors);
-			color = FlxColor.add(color, multiplyColorBrightness(bounceLight, 0.7));
+			color = FloatColor.addColor(color, bounceLight);
 
 			return {hit: true, color: color};
 		}
 		else
 		{
-			return {hit: false, color: skyColor};
+			return {hit: false, color: FloatColor.fromFlxColor(skyColor)};
 		}
 	}
 
 	function reflect(dir:Vector3D, normal:Vector3D):Vector3D
 	{
 		var dot = Vec3DHelper.dot(dir, normal);
-		return Vec3DHelper.subtract(dir, Vec3DHelper.scale(normal, 2 * dot));
+		return Vec3DHelper.subtract(dir, Vec3DHelper.multiplyScalar(normal, 2 * dot));
 	}
 
 	static function alignSampleToNormal(sample:Vector3D, normal:Vector3D):Vector3D
@@ -390,14 +405,14 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		return Vec3DHelper.normalize(worldSample);
 	}
 
-	function averageColors(colors:Array<FlxColor>):FlxColor
+	function averageColors(colors:Array<FloatColor>):FloatColor
 	{
 		if (colors.length == 0)
-			return 0;
+			return new FloatColor(0, 0, 0);
 
-		var rSum = 0;
-		var gSum = 0;
-		var bSum = 0;
+		var rSum = 0.0;
+		var gSum = 0.0;
+		var bSum = 0.0;
 
 		for (color in colors)
 		{
@@ -407,11 +422,11 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		}
 
 		var len = colors.length;
-		var rAvg = Std.int(rSum / len);
-		var gAvg = Std.int(gSum / len);
-		var bAvg = Std.int(bSum / len);
+		var rAvg = rSum / len;
+		var gAvg = gSum / len;
+		var bAvg = bSum / len;
 
-		return FlxColor.fromRGB(rAvg, gAvg, bAvg);
+		return new FloatColor(rAvg, gAvg, bAvg);
 	}
 
 	public var rendering = false;
@@ -422,11 +437,18 @@ class Raytracer implements ViewRenderer extends FlxCamera
 			return;
 		rendering = true;
 		geom = [];
+		lights = [];
 		globalIllum.pixels.fillRect(new Rectangle(0, 0, view.width, view.height), skyColor);
 
 		for (mesh in view.meshes)
+		{
 			for (meshPart in mesh.meshParts)
+			{
 				geom.push(meshPart);
+				if (meshPart.raytracingProperties.isEmitter)
+					lights = lights.concat(meshPart.raytracingProperties.lightPointers);
+			}
+		}
 
 		if (prevGeoms.length != 0)
 		{
@@ -437,7 +459,6 @@ class Raytracer implements ViewRenderer extends FlxCamera
 
 				if (change > 0)
 				{
-					Log.info('Rebuilding BVH (Change: $change%)');
 					raytracer.geometry = jsonifyGeom();
 					raytracer.rebuildBVH();
 				}
@@ -455,6 +476,7 @@ class Raytracer implements ViewRenderer extends FlxCamera
 			prevGeoms.push(deepCopyGeom(geom));
 
 		prog = 0;
+		var colors = [];
 		{
 			for (y in 0...view.height)
 			{
@@ -467,9 +489,9 @@ class Raytracer implements ViewRenderer extends FlxCamera
 						continue;
 
 					var ray = pixelToWorld(x, y);
-					var finalColor = FlxColor.BLACK;
 					var res = traceRay(ray);
-					finalColor = res.color;
+					var color = res.color;
+					var finalColor = tonemapper.map(color);
 					finalColor.alpha = 255;
 					globalIllum.pixels.fillRect(new Rectangle(x, y, giRes, giRes), finalColor);
 					prog++;
@@ -481,4 +503,46 @@ class Raytracer implements ViewRenderer extends FlxCamera
 
 	function multiplyColorBrightness(color:FlxColor, brightness:Float):FlxColor
 		return FlxColor.fromRGB(Std.int(color.red * brightness), Std.int(color.green * brightness), Std.int(color.blue * brightness));
+}
+
+class FloatColor
+{
+	public var red:Float;
+	public var green:Float;
+	public var blue:Float;
+
+	public function new(red:Float, green:Float, blue:Float)
+	{
+		this.red = red;
+		this.green = green;
+		this.blue = blue;
+	}
+
+	public static function multiplyFloat(color:FloatColor, val:Float):FloatColor
+		return new FloatColor(color.red * val, color.green * val, color.blue * val);
+
+	public static function multiplyColor(color1:FloatColor, color2:FloatColor):FloatColor
+		return new FloatColor(color1.red * color2.red, color1.green * color2.green, color1.blue * color2.blue);
+
+	public static function addColor(color1:FloatColor, color2:FloatColor):FloatColor
+		return new FloatColor(color1.red + color2.red, color1.green + color2.green, color1.blue + color2.blue);
+
+	public static function addFloat(color1:FloatColor, val:Float):FloatColor
+		return new FloatColor(color1.red + val, color1.green + val, color1.blue + val);
+
+	public static function subtractColor(color1:FloatColor, color2:FloatColor):FloatColor
+		return new FloatColor(color1.red - color2.red, color1.green - color2.green, color1.blue - color2.blue);
+
+	public static function lerpColor(color1:FloatColor, color2:FloatColor, t:Float):FloatColor
+		return new FloatColor(color1.red
+			+ (color2.red - color1.red) * t, color1.green
+			+ (color2.green - color1.green) * t,
+			color1.blue
+			+ (color2.blue - color1.blue) * t);
+
+	public static function fromFlxColor(color:FlxColor):FloatColor
+		return fromRGB(color.red, color.green, color.blue);
+
+	public static function fromRGB(red:Int, green:Int, blue:Int):FloatColor
+		return new FloatColor(red / 255, green / 255, blue / 255);
 }

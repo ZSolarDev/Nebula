@@ -11,6 +11,9 @@ class Vec3DHelper
 	public static function subtract(a:Vector3D, b:Vector3D):Vector3D
 		return new Vector3D(a.x - b.x, a.y - b.y, a.z - b.z);
 
+	public static function multiply(a:Vector3D, b:Vector3D):Vector3D
+		return new Vector3D(a.x * b.x, a.y * b.y, a.z * b.z);
+
 	public static function multiplyScalar(v:Vector3D, s:Float):Vector3D
 		return new Vector3D(v.x * s, v.y * s, v.z * s);
 
@@ -28,9 +31,6 @@ class Vec3DHelper
 
 	public static function clamp(value:Float, min:Float, max:Float):Float
 		return Math.max(min, Math.min(max, value));
-
-	public static function scale(v:Vector3D, s:Float):Vector3D
-		return new Vector3D(v.x * s, v.y * s, v.z * s);
 
 	function interpolate(a:Vector3D, b:Vector3D, t:Float):Vector3D
 		return new Vector3D(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
