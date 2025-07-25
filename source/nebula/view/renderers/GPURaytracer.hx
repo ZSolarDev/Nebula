@@ -40,6 +40,18 @@ class GPURaytracer extends Raytracer
 		shader.setInt('giSamples', giSamples);
 		shader.setFloat('bounceLightRandomness', bounceLightRandomness);
 		shader.setFloat('shadowsRandomness', shadowsRandomness);
+		/*
+			uniform float vertices[1000];
+			uniform float normals[1000];
+			uniform float indices[1000];
+			uniform int objectCount;
+			uniform int objectSeparators[1000];
+		 */
+		shader.setFloatArray('vertices', [0.0]);
+		shader.setFloatArray('normals', [0.0]);
+		shader.setFloatArray('indices', [0.0]);
+		shader.setInt('objectCount', 0);
+		shader.setIntArray('objectSeparators', [0]);
 		rendering = false;
 	}
 }
