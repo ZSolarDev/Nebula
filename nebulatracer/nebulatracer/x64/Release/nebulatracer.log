@@ -1,10 +1,10 @@
 ﻿  nebulatracer.cpp
-C:\Haxe-Libraries\Nebula\nebulatracer\nebulatracer.cpp(547,40): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
+C:\Haxe-Libraries\Nebula\nebulatracer\nebulatracer.cpp(563,40): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
      Creating library C:\Haxe-Libraries\Nebula\nebulatracer\x64\Release\nebulatracer.lib and object C:\Haxe-Libraries\Nebula\nebulatracer\x64\Release\nebulatracer.exp
   Generating code
-  18 of 562 functions ( 3.2%) were compiled, the rest were copied from previous compilation.
-    1 functions were new in current compilation
-    53 functions had inline decision re-evaluated but remain unchanged
+  2 of 562 functions ( 0.4%) were compiled, the rest were copied from previous compilation.
+    0 functions were new in current compilation
+    1 functions had inline decision re-evaluated but remain unchanged
   Finished generating code
 shaderc_combined.lib(shaderc.cc.obj) : warning LNK4099: PDB 'shaderc.pdb' was not found with 'shaderc_combined.lib(shaderc.cc.obj)' or at 'C:\Haxe-Libraries\Nebula\nebulatracer\x64\Release\shaderc.pdb'; linking object as if no debug info
 shaderc_combined.lib(compiler.cc.obj) : warning LNK4099: PDB 'shaderc_util.pdb' was not found with 'shaderc_combined.lib(compiler.cc.obj)' or at 'C:\Haxe-Libraries\Nebula\nebulatracer\x64\Release\shaderc_util.pdb'; linking object as if no debug info

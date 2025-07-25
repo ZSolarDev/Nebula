@@ -425,6 +425,8 @@ VkBuffer createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkDeviceMemor
 }
 
 vbyte* runComputeShader(void* inputData, size_t inputSize, size_t outputSize, int groupsX, int groupsY, int groupsZ) {
+    vkResetCommandBuffer(commandBuffer, 0);
+
     // Create input buffer + memory
     VkDeviceMemory inputBufferMemory;
     VkBuffer inputBuffer = createBuffer(inputSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, inputBufferMemory);
@@ -510,6 +512,20 @@ vbyte* runComputeShader(void* inputData, size_t inputSize, size_t outputSize, in
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
     vkCmdDispatch(commandBuffer, groupsX, groupsY, groupsZ);
+    VkMemoryBarrier memoryBarrier{};
+    memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    memoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT,
+        0,
+        1, &memoryBarrier,
+        0, nullptr,
+        0, nullptr
+    );
 
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
         throw std::runtime_error("Failed to record command buffer");

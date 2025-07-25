@@ -37,7 +37,9 @@ class ComputeExt
 		return b;
 	}
 
-	public static function testCompute()
+	static var input = buildInput();
+
+	public static function initCompute()
 	{
 		Compute.init_vulkan();
 		Compute.create_compute_shader("
@@ -60,9 +62,10 @@ void main() {
 }
 
 ");
-		var input = buildInput();
-		var output = Compute.run_compute_shader(input, 64, 4, 1, 1, 1);
+	}
 
-		trace(output.getF32(0));
+	public static function runCompute()
+	{
+		Compute.run_compute_shader(input, 64, 4, 1, 1, 1);
 	}
 }
