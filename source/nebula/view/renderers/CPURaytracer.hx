@@ -1,219 +1,333 @@
 package nebula.view.renderers;
 
-import flixel.*;
-import flixel.math.FlxRandom;
-import flixel.util.FlxColor;
+import flixel.FlxG;
+import flixel.FlxSprite;
 import lime.utils.Log;
-import nebula.utils.Vec3DHelper.*;
-import nebula.view.N3DView.ClippingVertex;
+import nebula.mesh.MeshPart;
+import nebula.tonemapper.*;
+import nebula.utils.Vec3DHelper;
+import nebula.view.renderers.Raytracer.FloatColor;
+import nebulatracer.NebulaTracer.Ray;
+import nebulatracer.RaytracerExt.TraceResult;
 import openfl.geom.Rectangle;
 import openfl.geom.Vector3D;
 
-typedef Triangle =
+class CPURaytracer extends Raytracer
 {
-	var pos0:Vector3D;
-	var pos1:Vector3D;
-	var pos2:Vector3D;
-	var color:Int;
-	var reflectiveness:Float;
-	var lightness:Float;
-}
-
-class CPURaytracer extends FlxSprite implements ViewRenderer
-{
-	public var view:N3DView;
-	public var rendering:Bool = false;
-	public var numBounces:Int = 3;
-	public var triangles:Array<Triangle>;
+	public var tonemapper:Tonemapper = new ClampTonemapper();
+	public var giRes:Int = 1;
+	public var skyColor:FloatColor = new FloatColor(0, 0, 0);
+	public var globalIllum:FlxSprite;
+	public var clearFrame:Bool = true;
+	public var numBounces:Int = 1;
+	public var giSamples:Int = 32;
+	public var bounceLightRandomness = 0.1;
+	public var shadowsRandomness = 0.1;
 
 	override public function new(view:N3DView)
 	{
-		super();
-		this.view = view;
-		makeGraphic(view.width, view.height, 0x00D9FF);
-		FlxG.state.add(this);
+		super(view);
+		globalIllum = new FlxSprite();
+		globalIllum.makeGraphic(view.width, view.height, tonemapper.map(skyColor));
+		globalIllum.pixels.fillRect(new Rectangle(0, 0, view.width, view.height), tonemapper.map(skyColor));
+		FlxG.state.add(globalIllum);
 	}
 
-	function intersectTriangle(orig:Vector3D, dir:Vector3D, a:Vector3D, b:Vector3D, c:Vector3D):Float
+	public function traceRay(ray:Ray):{hit:Bool, color:FloatColor}
 	{
-		final EPSILON = 0.0000001;
-		var edge1 = subtract(b, a);
-		var edge2 = subtract(c, a);
-		var h = cross(dir, edge2);
-		var aDot = dot(edge1, h);
-
-		if (aDot > -EPSILON && aDot < EPSILON)
-			return -1;
-
-		var f = 1.0 / aDot;
-		var s = subtract(orig, a);
-		var u = f * dot(s, h);
-		if (u < 0.0 || u > 1.0)
-			return -1;
-
-		var q = cross(s, edge1);
-		var v = f * dot(dir, q);
-		if (v < 0.0 || u + v > 1.0)
-			return -1;
-
-		var t = f * dot(edge2, q);
-		if (t > EPSILON)
-			return t;
-		else
-			return -1;
-	}
-
-	function multiplyColor(color:Int, factor:Float):Int
-	{
-		var a = (color >> 24) & 0xFF;
-		var r = (color >> 16) & 0xFF;
-		var g = (color >> 8) & 0xFF;
-		var b = color & 0xFF;
-
-		r = cast Math.min(255, Std.int(r * factor));
-		g = cast Math.min(255, Std.int(g * factor));
-		b = cast Math.min(255, Std.int(b * factor));
-
-		return (a << 24) | (r << 16) | (g << 8) | b;
-	}
-
-	function randomHemisphereDirection(normal:Vector3D):Vector3D
-	{
-		var u = Math.random();
-		var v = Math.random();
-
-		var theta = 2 * Math.PI * u;
-		var phi = Math.acos(2 * v - 1);
-
-		var x = Math.sin(phi) * Math.cos(theta);
-		var y = Math.sin(phi) * Math.sin(theta);
-		var z = Math.cos(phi);
-
-		var randDir = new Vector3D(x, y, z);
-
-		// Make sure it's in the same hemisphere as the normal
-		if (dot(randDir, normal) < 0)
-			randDir = multiplyScalar(randDir, -1);
-
-		return randDir;
-	}
-
-	function traceRay(rayPos:Vector3D, rayDir:Vector3D):Int
-	{
-		var closestDist = 1e9;
-		var bestTri:Triangle = null;
-
-		for (tri in triangles)
+		var color:FloatColor = new FloatColor(0, 0, 0);
+		var res:TraceResult = raytracer.traceRay(ray);
+		if (res.hit)
 		{
-			var dist = intersectTriangle(rayPos, rayDir, tri.pos0, tri.pos1, tri.pos2);
-			if (dist > 0 && dist < closestDist)
+			var part = geom[res.geomID];
+			var hitPos = Vec3DHelper.add(ray.pos, Vec3DHelper.multiplyScalar(ray.dir, res.distance));
+			if (part.raytracingProperties.isEmitter)
+				color = part._color;
+			else
 			{
-				closestDist = dist;
-				bestTri = tri;
-			}
-		}
-
-		if (bestTri != null)
-			return bestTri.color;
-		else
-			return 0xFF00D9FF; // sky color or fallback
-	}
-
-	public function renderScene():Void
-	{
-		try
-		{
-			if (rendering)
-				return;
-			rendering = true;
-
-			pixels.fillRect(new Rectangle(0, 0, view.width, view.height), 0x00000000); // fill black with full alpha
-
-			var width = frameWidth;
-			var height = frameHeight;
-
-			triangles = [];
-			for (tri in view.camSpaceTris)
-			{
-				triangles.push({
-					pos0: tri[0].pos,
-					pos1: tri[1].pos,
-					pos2: tri[2].pos,
-					color: tri[0].meshPart.color,
-					reflectiveness: tri[0].meshPart.raytracingProperties.reflectiveness,
-					lightness: tri[0].meshPart.raytracingProperties.lightness
-				});
-			}
-
-			for (y in 0...height)
-			{
-				for (x in 0...width)
+				for (light in lights)
 				{
-					var uvx = (x / width) * 2.0 - 1.0;
-					var uvy = (y / height) * 2.0 - 1.0;
+					var toLight = Vec3DHelper.subtract(light.pos, hitPos);
+					var dirToLight = Vec3DHelper.normalize(toLight);
+					var coneAngle = 0.13;
+					var shadowSamples = 16;
+					var litCount = 0;
 
-					var aspect = width / height;
-					uvx *= aspect;
+					var coneSampleDirs = generateConeSamples(dirToLight, coneAngle, shadowSamples);
 
-					var z = -1.0 / Math.tan(Math.PI * 0.5 * view.fov / 180);
-
-					var rayDir = normalize(new Vector3D(uvx, uvy, z));
-					var rayPos = new Vector3D(0, 0, 0);
-
-					var skyColor:Int = 0xFF00D9FF;
-					var hitTri = null;
-					var hitDist = 0.0;
-					var accumulatedColor:Int = skyColor;
-					var accumulatedReflect = 1.0;
-
-					for (bounce in 0...numBounces)
+					for (sampleDir in coneSampleDirs)
 					{
-						var minDist = 1e9;
-						hitTri = null;
+						var shadowRay:Ray = {
+							pos: Vec3DHelper.add(hitPos, Vec3DHelper.multiplyScalar(sampleDir, 0.001)),
+							dir: sampleDir
+						};
 
-						for (tri in triangles)
-						{
-							var dist = intersectTriangle(rayPos, rayDir, tri.pos0, tri.pos1, tri.pos2);
-							if (dist > 0 && dist < minDist)
-							{
-								minDist = dist;
-								hitTri = tri;
-							}
-						}
-
-						if (hitTri == null)
-						{
-							accumulatedColor = FlxColor.interpolate(accumulatedColor, skyColor, accumulatedReflect);
-							break;
-						}
-
-						var hitColor = hitTri.color;
-						var reflect = hitTri.reflectiveness;
-
-						accumulatedColor = FlxColor.interpolate(accumulatedColor, hitColor, accumulatedReflect * (1.0 - reflect));
-						accumulatedReflect *= reflect;
-
-						if (accumulatedReflect <= 0.01) // almost no reflection left
-							break;
-
-						// compute new ray direction
-						hitDist = minDist;
-						var hitPoint = add(rayPos, multiplyScalar(rayDir, hitDist));
-						var edge1 = subtract(hitTri.pos1, hitTri.pos0);
-						var edge2 = subtract(hitTri.pos2, hitTri.pos0);
-						var normal = normalize(cross(edge1, edge2));
-						rayDir = normalize(subtract(rayDir, multiplyScalar(normal, 2 * dot(rayDir, normal))));
-						rayPos = add(hitPoint, multiplyScalar(rayDir, 0.001));
+						var shadowRes = raytracer.traceRay(shadowRay);
+						if (shadowRes.hit)
+							if (geom[shadowRes.geomID] == light.meshPart)
+								litCount++;
 					}
 
-					pixels.setPixel32(x, y, accumulatedColor);
+					var shadowStrength = litCount / shadowSamples; // between 0 and 1
+
+					var diff = Vec3DHelper.subtract(light.pos, hitPos);
+					var distFalloff = 1.0 - (diff.length / light.power);
+					distFalloff = Math.max(0, distFalloff);
+					var darkenedSkyColor = FloatColor.multiplyFloat(skyColor, (1 - shadowStrength) * 0.1);
+					var finalPartColor = FloatColor.lerpColor(part._color, darkenedSkyColor, (1 - shadowStrength) * 0.9);
+					var baseDarkened = FloatColor.multiplyFloat(finalPartColor, distFalloff + 0.001);
+					var lightIntensity = distFalloff * shadowStrength;
+					var lightSaturation = rgbToSaturation(light.color.red, light.color.green, light.color.blue);
+					var lightDivisor = 15 * (1 - lightSaturation) + 1 * lightSaturation;
+					lightIntensity = Math.min(1, lightIntensity / lightDivisor);
+					color = FloatColor.addColor(color, FloatColor.lerpColor(baseDarkened, light.color, lightIntensity));
 				}
 			}
-			rendering = false;
+			var hemisphereSamples = generateHemisphereSamples(32);
+
+			var colors = [];
+			for (sample in hemisphereSamples)
+			{
+				var normal = getTriangleNormal(part, res.primID);
+				var sampleDir = alignSampleToNormal(sample, normal);
+
+				var bounceRay:Ray = {
+					pos: Vec3DHelper.add(hitPos, Vec3DHelper.multiplyScalar(sampleDir, 0.001)),
+					dir: sampleDir
+				};
+
+				var bounceRes = raytracer.traceRay(bounceRay);
+				if (bounceRes.hit)
+				{
+					var bouncePart = geom[bounceRes.geomID];
+					colors.push(bouncePart._color);
+				}
+				else
+				{
+					var ndotl = Math.max(0, Vec3DHelper.dot(sampleDir, normal));
+					var envLight = FloatColor.multiplyFloat(skyColor, ndotl * 0.3);
+					colors.push(envLight);
+				}
+			}
+
+			var bounceLight = averageColors(colors);
+			color = FloatColor.addColor(color, bounceLight);
+
+			return {hit: true, color: color};
 		}
-		catch (e)
+		else
 		{
-			Log.error(e);
+			return {hit: false, color: skyColor};
 		}
+	}
+
+	function generateHemisphereSamples(num:Int):Array<Vector3D>
+	{
+		var samples = new Array<Vector3D>();
+		var offset = 2.0 / num;
+		var increment = Math.PI * (3.0 - Math.sqrt(5.0));
+
+		for (i in 0...num)
+		{
+			var y_base = 1.0 - (i * offset);
+			var r_base = Math.sqrt(1.0 - y_base * y_base);
+			var phi_base = i * increment;
+			var x_base = Math.cos(phi_base) * r_base;
+			var z_base = Math.sin(phi_base) * r_base;
+
+			var u = Math.random();
+			var v = Math.random();
+			var theta = 2.0 * Math.PI * u;
+			var y_rand = v;
+			var r_rand = Math.sqrt(1.0 - y_rand * y_rand);
+			var x_rand = Math.cos(theta) * r_rand;
+			var z_rand = Math.sin(theta) * r_rand;
+
+			var x = x_base * (1.0 - bounceLightRandomness) + x_rand * bounceLightRandomness;
+			var y = y_base * (1.0 - bounceLightRandomness) + y_rand * bounceLightRandomness;
+			var z = z_base * (1.0 - bounceLightRandomness) + z_rand * bounceLightRandomness;
+
+			var len = Math.sqrt(x * x + y * y + z * z);
+			samples.push(new Vector3D(x / len, y / len, z / len));
+		}
+
+		return samples;
+	}
+
+	public function getTriangleNormal(part:MeshPart, primID:Int):Vector3D
+	{
+		var i0 = part.indices[primID * 3];
+		var i1 = part.indices[primID * 3 + 1];
+		var i2 = part.indices[primID * 3 + 2];
+
+		var v0 = part.vertices[i0];
+		var v1 = part.vertices[i1];
+		var v2 = part.vertices[i2];
+
+		var edge1 = Vec3DHelper.subtract(v1, v0);
+		var edge2 = Vec3DHelper.subtract(v2, v0);
+
+		var normal = Vec3DHelper.cross(edge1, edge2);
+		return Vec3DHelper.normalize(normal);
+	}
+
+	function generateConeSamples(dirToLight:Vector3D, coneAngle:Float, sampleCount:Int):Array<Vector3D>
+	{
+		var samples = new Array<Vector3D>();
+
+		var up = Math.abs(dirToLight.y) < 0.999 ? new Vector3D(0, 1, 0) : new Vector3D(1, 0, 0);
+		var tangent = Vec3DHelper.normalize(Vec3DHelper.cross(dirToLight, up));
+		var bitangent = Vec3DHelper.normalize(Vec3DHelper.cross(tangent, dirToLight));
+
+		for (i in 0...sampleCount)
+		{
+			var detPhi = (i + 0.5) / sampleCount * Math.PI * 2;
+			var detCosTheta = 1 - (i + 0.5) / sampleCount * (1 - Math.cos(coneAngle));
+
+			var randPhi = Math.random() * Math.PI * 2;
+			var randCosTheta = 1 - Math.random() * (1 - Math.cos(coneAngle));
+
+			var phi = detPhi * (1 - shadowsRandomness) + randPhi * shadowsRandomness;
+			var cosTheta = detCosTheta * (1 - shadowsRandomness) + randCosTheta * shadowsRandomness;
+			var sinTheta = Math.sqrt(1 - cosTheta * cosTheta);
+
+			var sampleDir = new Vector3D(Math.cos(phi) * sinTheta, cosTheta, Math.sin(phi) * sinTheta);
+
+			var worldDir = new Vector3D(tangent.x * sampleDir.x
+				+ dirToLight.x * sampleDir.y
+				+ bitangent.x * sampleDir.z,
+				tangent.y * sampleDir.x
+				+ dirToLight.y * sampleDir.y
+				+ bitangent.y * sampleDir.z,
+				tangent.z * sampleDir.x
+				+ dirToLight.z * sampleDir.y
+				+ bitangent.z * sampleDir.z);
+
+			samples.push(Vec3DHelper.normalize(worldDir));
+		}
+
+		return samples;
+	}
+
+	function rgbToSaturation(r:Float, g:Float, b:Float):Float
+	{
+		var max = Math.max(r, Math.max(g, b));
+		var min = Math.min(r, Math.min(g, b));
+		var delta = max - min;
+
+		if (max == 0)
+			return 0;
+
+		return delta / max;
+	}
+
+	public function pixelToWorld(x:Float, y:Float):Ray
+	{
+		final fov = view.fov;
+		final aspectRatio = view.width / view.height;
+
+		var ndcX = (2 * x) / view.width - 1;
+		var ndcY = (2 * y) / view.height - 1;
+
+		var fovRad = Math.PI * fov / 180;
+		var tanFov = Math.tan(fovRad / 2);
+
+		var camX = ndcX * aspectRatio * tanFov;
+		var camY = ndcY * tanFov;
+		var camZ = -1;
+
+		var dir = new Vector3D(camX, camY, camZ);
+		dir.normalize();
+
+		var yaw = view.camYaw;
+		var pitch = view.camPitch;
+
+		// --- Apply Pitch (X axis) ---
+		var cosPitch = Math.cos(pitch);
+		var sinPitch = Math.sin(pitch);
+
+		var y1 = dir.y * cosPitch - dir.z * sinPitch;
+		var z1 = dir.y * sinPitch + dir.z * cosPitch;
+		var x1 = dir.x;
+
+		// --- Apply Yaw (Y axis) after pitch ---
+		var cosYaw = Math.cos(yaw);
+		var sinYaw = Math.sin(yaw);
+
+		var x2 = x1 * cosYaw - z1 * sinYaw;
+		var z2 = x1 * sinYaw + z1 * cosYaw;
+
+		dir.setTo(x2, y1, z2);
+		dir.normalize();
+
+		var ray:Ray = {
+			pos: new Vector3D(view.camX, view.camY, view.camZ),
+			dir: dir
+		};
+		return ray;
+	}
+
+	public function alignSampleToNormal(sample:Vector3D, normal:Vector3D):Vector3D
+	{
+		var up = Math.abs(normal.y) < 0.999 ? new Vector3D(0, 1, 0) : new Vector3D(1, 0, 0);
+		var tangent = Vec3DHelper.normalize(Vec3DHelper.cross(normal, up));
+		var bitangent = Vec3DHelper.normalize(Vec3DHelper.cross(normal, tangent));
+
+		var worldSample = new Vector3D(tangent.x * sample.x
+			+ bitangent.x * sample.z
+			+ normal.x * sample.y,
+			tangent.y * sample.x
+			+ bitangent.y * sample.z
+			+ normal.y * sample.y, tangent.z * sample.x
+			+ bitangent.z * sample.z
+			+ normal.z * sample.y);
+
+		return Vec3DHelper.normalize(worldSample);
+	}
+
+	override public function update(elapsed:Float)
+	{
+		super.update(elapsed);
+		if (clearFrame)
+		{
+			globalIllum.pixels.lock();
+			globalIllum.pixels.fillRect(new Rectangle(0, 0, view.width, view.height), tonemapper.map(skyColor));
+			globalIllum.pixels.unlock();
+		}
+		var colors = [];
+		{
+			for (y in 0...view.height)
+			{
+				if (y % giRes != 0)
+					continue;
+
+				for (x in 0...view.width)
+				{
+					if (x % giRes != 0)
+						continue;
+
+					var ray = pixelToWorld(x, y);
+					var res:{hit:Bool, color:FloatColor} = {hit: false, color: skyColor};
+					try
+					{
+						res = traceRay(ray);
+					}
+					catch (e)
+					{
+						Log.throwErrors = false;
+						Log.error('Error tracing ray at (x, y)[$x, $y]: ${e.toString()}');
+						Log.throwErrors = true;
+					}
+					var color = res.color;
+					var finalColor = tonemapper.map(color);
+					finalColor.alpha = 255;
+					globalIllum.pixels.lock();
+					globalIllum.pixels.fillRect(new Rectangle(x, y, giRes, giRes), finalColor);
+					globalIllum.pixels.unlock();
+					prog++;
+				}
+			}
+		}
+		rendering = false;
 	}
 }

@@ -43,6 +43,7 @@ class N3DView extends FlxBasic
 	public var height:Int;
 	public var projectionMatrix(get, never):Array<Float>;
 	public var projectedMeshes:Array<ProjectionMesh> = [];
+	public var canMove:Bool = true;
 
 	public function new(width:Int, height:Int, renderer:Class<ViewRenderer>, fov:Float = 70, aspect:Float = 0, nearPlane:Float = 0.1, farPlane:Float = 100000)
 	{
@@ -133,71 +134,74 @@ class N3DView extends FlxBasic
 		camSpaceTris = [];
 		super.update(elapsed);
 
-		// --- camera Movement ---
-		var speed = 100 * elapsed;
-
-		// get forward vector including pitch and yaw
-		var forwardX = Math.sin(-camYaw) * Math.cos(-camPitch);
-		var forwardY = -Math.sin(camPitch);
-		var forwardZ = Math.cos(-camYaw) * Math.cos(-camPitch);
-
-		// right vector on XZ plane only (pitch ignored for strafing)
-		var rightX = -Math.cos(-camYaw);
-		var rightZ = Math.sin(-camYaw);
-
-		// movement deltas
-		var dx = 0.0;
-		var dy = 0.0;
-		var dz = 0.0;
-
-		if (FlxG.keys.pressed.W)
+		if (canMove)
 		{
-			dx -= forwardX;
-			dy -= forwardY;
-			dz -= forwardZ;
-		}
-		if (FlxG.keys.pressed.S)
-		{
-			dx += forwardX;
-			dy += forwardY;
-			dz += forwardZ;
-		}
-		if (FlxG.keys.pressed.D)
-		{
-			dx -= rightX;
-			dz -= rightZ;
-		}
-		if (FlxG.keys.pressed.A)
-		{
-			dx += rightX;
-			dz += rightZ;
-		}
+			// --- camera Movement ---
+			var speed = 100 * elapsed;
 
-		// normalize to prevent faster diagonal movement
-		var length = Math.sqrt(dx * dx + dy * dy + dz * dz);
-		if (length > 0)
-		{
-			dx /= length;
-			dy /= length;
-			dz /= length;
+			// get forward vector including pitch and yaw
+			var forwardX = Math.sin(-camYaw) * Math.cos(-camPitch);
+			var forwardY = -Math.sin(camPitch);
+			var forwardZ = Math.cos(-camYaw) * Math.cos(-camPitch);
 
-			camX += dx * speed;
-			camY += dy * speed;
-			camZ += dz * speed;
-		}
+			// right vector on XZ plane only (pitch ignored for strafing)
+			var rightX = -Math.cos(-camYaw);
+			var rightZ = Math.sin(-camYaw);
 
-		// y movement independent from yaw
-		if (FlxG.keys.pressed.SPACE)
-			camY -= speed;
-		if (FlxG.keys.pressed.SHIFT)
-			camY += speed;
+			// movement deltas
+			var dx = 0.0;
+			var dy = 0.0;
+			var dz = 0.0;
 
-		// --- camera rotation ---
-		if (FlxG.mouse.pressed)
-		{
-			camYaw += FlxG.mouse.deltaX * 0.005;
-			camPitch += FlxG.mouse.deltaY * 0.005;
-			camPitch = Math.max(Math.min(camPitch, Math.PI / 2), -Math.PI / 2);
+			if (FlxG.keys.pressed.W)
+			{
+				dx -= forwardX;
+				dy -= forwardY;
+				dz -= forwardZ;
+			}
+			if (FlxG.keys.pressed.S)
+			{
+				dx += forwardX;
+				dy += forwardY;
+				dz += forwardZ;
+			}
+			if (FlxG.keys.pressed.D)
+			{
+				dx -= rightX;
+				dz -= rightZ;
+			}
+			if (FlxG.keys.pressed.A)
+			{
+				dx += rightX;
+				dz += rightZ;
+			}
+
+			// normalize to prevent faster diagonal movement
+			var length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+			if (length > 0)
+			{
+				dx /= length;
+				dy /= length;
+				dz /= length;
+
+				camX += dx * speed;
+				camY += dy * speed;
+				camZ += dz * speed;
+			}
+
+			// y movement independent from yaw
+			if (FlxG.keys.pressed.SPACE)
+				camY -= speed;
+			if (FlxG.keys.pressed.SHIFT)
+				camY += speed;
+
+			// --- camera rotation ---
+			if (FlxG.mouse.pressed)
+			{
+				camYaw += FlxG.mouse.deltaX * 0.005;
+				camPitch += FlxG.mouse.deltaY * 0.005;
+				camPitch = Math.max(Math.min(camPitch, Math.PI / 2), -Math.PI / 2);
+			}
 		}
 
 		// --- projection ---

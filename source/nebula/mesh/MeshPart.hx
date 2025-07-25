@@ -2,6 +2,7 @@ package nebula.mesh;
 
 import flixel.graphics.FlxGraphic;
 import lime.utils.Log;
+import nebula.view.renderers.Raytracer.FloatColor;
 import nebula.view.renderers.Raytracer.Light;
 import openfl.Vector;
 import openfl.display.BitmapData;
@@ -17,6 +18,7 @@ class MeshPart
 	public var normals:Vector<Vector3D> = new Vector<Vector3D>();
 	public var useColor:Bool = false;
 	public var color(default, set):Int = 0xFFFFFFFF;
+	public var _color:FloatColor = new FloatColor(0, 0, 0);
 	public var graphic(default, set):String = '';
 	public var raytracingProperties:
 		{
@@ -30,6 +32,7 @@ class MeshPart
 	{
 		this.color = val;
 		_graphic = FlxGraphic.fromBitmapData(new BitmapData(1, 1, true, val));
+		_color = FloatColor.fromFlxColor(val);
 		return val;
 	}
 
