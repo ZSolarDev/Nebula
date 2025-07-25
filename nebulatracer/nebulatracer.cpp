@@ -1,8 +1,5 @@
 #define HL_NAME(n) nebulatracer_##n
 
-#define GLAD_MX
-#include "gl.h"
-#include <GLFW/glfw3.h>
 #include <embree4/rtcore.h>
 #include <vector>
 #include <unordered_map>
@@ -12,15 +9,13 @@
 #include "parson.h"
 #include <string>
 #include <codecvt>
+#include <shaderc/shaderc.h>
 #include <locale>
+#include <vulkan/vulkan.h>
+#include <cstring>
+#include <stdexcept>
 
-#ifdef MemoryBarrier
-#undef MemoryBarrier // (>_<)
-#endif
 
-
-GLFWwindow* window;
-GLFWwindow* limeCtx;
 
 typedef struct
 {
@@ -190,138 +185,418 @@ void loadGeometry(const char* json, int id) {
     json_value_free(rootVal);
 }
 
-//--------- OpenGL Compute Shaders(Ugh, why is lime so outdated... >:<) ---------//
-void initOpenGL() {
-    if (!glfwInit()) {
-        std::cerr << "Failed to initialize GLFW\n";
-        return;
+
+
+// Globals
+VkInstance instance;
+VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+VkDevice device;
+VkQueue computeQueue;
+uint32_t computeQueueFamilyIndex = 0;
+VkCommandPool commandPool;
+VkCommandBuffer commandBuffer;
+VkPipeline computePipeline;
+VkPipelineLayout pipelineLayout;
+VkDescriptorSetLayout descriptorSetLayout;
+VkDescriptorPool descriptorPool;
+VkShaderModule computeShaderModule = VK_NULL_HANDLE;
+
+void initVulkan() {
+    // Create Instance
+    VkApplicationInfo appInfo{};
+    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    appInfo.pApplicationName = "Vulkan Compute";
+    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.pEngineName = "No Engine";
+    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.apiVersion = VK_API_VERSION_1_2;
+
+    VkInstanceCreateInfo instanceCreateInfo{};
+    instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    instanceCreateInfo.pApplicationInfo = &appInfo;
+
+    if (vkCreateInstance(&instanceCreateInfo, nullptr, &instance) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create Vulkan instance");
     }
-    limeCtx = glfwGetCurrentContext();
-    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    window = glfwCreateWindow(1, 1, "_COMPUTE", nullptr, limeCtx);
-    if (!window) {
-        std::cerr << "Failed to create GLFW window\n";
-        glfwTerminate();
-        return;
+    // Pick Physical Device with compute support
+    uint32_t deviceCount = 0;
+    vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+    if (deviceCount == 0) {
+        throw std::runtime_error("Failed to find GPUs with Vulkan support");
+    }
+    std::vector<VkPhysicalDevice> devices(deviceCount);
+    vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+
+    for (const auto& deviceCandidate : devices) {
+        uint32_t queueFamilyCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(deviceCandidate, &queueFamilyCount, nullptr);
+        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(deviceCandidate, &queueFamilyCount, queueFamilies.data());
+
+        for (uint32_t i = 0; i < queueFamilyCount; i++) {
+            if (queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
+                physicalDevice = deviceCandidate;
+                computeQueueFamilyIndex = i;
+                break;
+            }
+        }
+        if (physicalDevice != VK_NULL_HANDLE)
+            break;
+    }
+    if (physicalDevice == VK_NULL_HANDLE) {
+        throw std::runtime_error("Failed to find a GPU with compute support");
     }
 
-    glfwMakeContextCurrent(window);
-    gladLoadGL(glfwGetProcAddress);
+    // Create Logical Device and Compute Queue
+    float queuePriority = 1.0f;
+    VkDeviceQueueCreateInfo queueCreateInfo{};
+    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    queueCreateInfo.queueFamilyIndex = computeQueueFamilyIndex;
+    queueCreateInfo.queueCount = 1;
+    queueCreateInfo.pQueuePriorities = &queuePriority;
 
-    glfwMakeContextCurrent(limeCtx);
+    VkDeviceCreateInfo deviceCreateInfo{};
+    deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    deviceCreateInfo.queueCreateInfoCount = 1;
+    deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
+
+    if (vkCreateDevice(physicalDevice, &deviceCreateInfo, nullptr, &device) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create logical device");
+    }
+
+    vkGetDeviceQueue(device, computeQueueFamilyIndex, 0, &computeQueue);
+
+    // Create Command Pool
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.queueFamilyIndex = computeQueueFamilyIndex;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+    if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create command pool");
+    }
+
+    // Allocate Command Buffer
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = commandPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
+
+    if (vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate command buffer");
+    }
 }
 
-static GLuint loadComputeShader(const char* src) {
-    GLuint shader = glCreateShader(GL_COMPUTE_SHADER);
-    glShaderSource(shader, 1, &src, nullptr);
-    glCompileShader(shader);
+void createDescriptorSetLayout() {
+    VkDescriptorSetLayoutBinding bindings[2]{};
 
-    GLint success;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        char log[512];
-        glGetShaderInfoLog(shader, 512, nullptr, log);
-        std::cerr << "Compute shader compilation failed:\n" << log << std::endl;
-    }
-    GLuint program = glCreateProgram();
-    glAttachShader(program, shader);
-    glLinkProgram(program);
+    bindings[0].binding = 0;
+    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[0].descriptorCount = 1;
+    bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
-    glGetProgramiv(program, GL_LINK_STATUS, &success);
-    if (!success) {
-        char log[512];
-        glGetProgramInfoLog(program, 512, nullptr, log);
-        std::cerr << "Program linking failed:\n" << log << std::endl;
+    bindings[1].binding = 1;
+    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[1].descriptorCount = 1;
+    bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 2;
+    layoutInfo.pBindings = bindings;
+
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create descriptor set layout");
     }
-    glDeleteShader(shader);
-    return program;
 }
 
-std::unordered_map<int, GLuint> programs;
+void createPipelineLayout() {
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
 
-vbyte* run_compute_shader(int id, void* dataIn, int groupsX, int groupsY, int groupsZ, int sizeInBytesIn, int sizeInBytesOut) {
-    glfwMakeContextCurrent(window);
-    GLuint ssboIn, ssboOut;
-
-    // input
-    glGenBuffers(1, &ssboIn);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboIn);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeInBytesIn, dataIn, GL_DYNAMIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboIn);
-
-    // output
-    glGenBuffers(1, &ssboOut);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOut);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeInBytesOut, nullptr, GL_DYNAMIC_READ);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssboOut);
-
-    GLuint program = programs[id];
-    glUseProgram(program);
-    glDispatchCompute(groupsX, groupsY, groupsZ);
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-    // map output buffer
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOut);
-    void* ptr = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-    vbyte* dataOut = hl_alloc_bytes(sizeInBytesOut);
-    if (ptr) {
-        memcpy(dataOut, ptr, sizeInBytesOut);
-        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create pipeline layout");
     }
-    else {
-        std::cerr << "Failed to map output buffer\n";
-    }
-
-    glDeleteBuffers(1, &ssboIn);
-    glDeleteBuffers(1, &ssboOut);
-    GLenum err = glGetError();
-    if (err != GL_NO_ERROR) {
-        std::cerr << "OpenGL error after dispatch: " << err << std::endl;
-    }
-    // just in case..
-    glUseProgram(0);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, 0);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, 0);
-    glBindVertexArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glUseProgram(0);
-    glFinish();
-
-    glfwMakeContextCurrent(limeCtx);
-    return dataOut;
 }
 
-void create_compute_shader(const char* src) {
-    glfwMakeContextCurrent(window);
-    GLuint program = loadComputeShader(src);
-    programs[programs.size() + 1] = program;
-    glfwMakeContextCurrent(limeCtx);
+void createComputePipeline(const char* glsl) {  
+    if (computeShaderModule != VK_NULL_HANDLE) {  
+        vkDestroyShaderModule(device, computeShaderModule, nullptr);  
+        computeShaderModule = VK_NULL_HANDLE;  
+    }  
+
+    shaderc_compiler_t compiler = shaderc_compiler_initialize();  
+    shaderc_compile_options_t options = shaderc_compile_options_initialize();  
+    shaderc_compile_options_set_source_language(options, shaderc_source_language_glsl);  
+    shaderc_compilation_result_t result = shaderc_compile_into_spv(  
+        compiler,  
+        glsl,  
+        strlen(glsl),  
+        shaderc_compute_shader,  
+        "_VKCompute.comp",  
+        "main",  
+        options  
+    );  
+    if (shaderc_result_get_compilation_status(result) != shaderc_compilation_status_success) {  
+        std::cerr << "Shader compilation failed: " << shaderc_result_get_error_message(result) << std::endl;  
+        return;  
+    }  
+
+    const uint32_t* spirvCode = reinterpret_cast<const uint32_t*>(shaderc_result_get_bytes(result));  
+    size_t spirvSize = shaderc_result_get_length(result);  
+
+    VkShaderModuleCreateInfo shaderModuleCreateInfo{};  
+    shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;  
+    shaderModuleCreateInfo.codeSize = spirvSize;  
+    shaderModuleCreateInfo.pCode = spirvCode;  
+
+    if (vkCreateShaderModule(device, &shaderModuleCreateInfo, nullptr, &computeShaderModule) != VK_SUCCESS) {  
+        throw std::runtime_error("Failed to create shader module");  
+    }  
+
+    VkPipelineShaderStageCreateInfo shaderStageInfo{};  
+    shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;  
+    shaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;  
+    shaderStageInfo.module = computeShaderModule;  
+    shaderStageInfo.pName = "main";  
+
+    VkComputePipelineCreateInfo pipelineCreateInfo{};  
+    pipelineCreateInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;  
+    pipelineCreateInfo.stage = shaderStageInfo;  
+    pipelineCreateInfo.layout = pipelineLayout;  
+
+    if (computePipeline != VK_NULL_HANDLE) {  
+        vkDestroyPipeline(device, computePipeline, nullptr);  
+        computePipeline = VK_NULL_HANDLE;  
+    }  
+
+    if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &computePipeline) != VK_SUCCESS) {  
+        throw std::runtime_error("Failed to create compute pipeline");  
+    }  
 }
 
-void remove_compute_shader(int id) {
-    glfwMakeContextCurrent(window);
-    glDeleteProgram(programs[id]);
-	programs.erase(id);
-    glfwMakeContextCurrent(limeCtx);
+VkBuffer createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkDeviceMemory& bufferMemory) {
+    VkBuffer buffer;
+
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = size;
+    bufferInfo.usage = usage;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create buffer");
+    }
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
+
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+
+    bool memTypeFound = false;
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        if ((memRequirements.memoryTypeBits & (1 << i)) &&
+            (memProperties.memoryTypes[i].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))) {
+            allocInfo.memoryTypeIndex = i;
+            memTypeFound = true;
+            break;
+        }
+    }
+    if (!memTypeFound) {
+        throw std::runtime_error("Failed to find suitable memory type");
+    }
+
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate buffer memory");
+    }
+
+    vkBindBufferMemory(device, buffer, bufferMemory, 0);
+
+    return buffer;
 }
 
-vbyte* run_compute_shader_from_src(const char* src, void* dataIn, int groupsX, int groupsY, int groupsZ, int sizeInBytesIn, int sizeInBytesOut) {
-    create_compute_shader(src);
-    vbyte* dataOut = run_compute_shader(
-        programs.size(),
-        dataIn,
-        groupsX,
-        groupsY,
-        groupsZ,
-        sizeInBytesIn,
-        sizeInBytesOut
-    );
-    remove_compute_shader(programs.size());
-    return dataOut;
+vbyte* runComputeShader(void* inputData, size_t inputSize, size_t outputSize, int groupsX, int groupsY, int groupsZ) {
+    // Create input buffer + memory
+    VkDeviceMemory inputBufferMemory;
+    VkBuffer inputBuffer = createBuffer(inputSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, inputBufferMemory);
+
+    // Map and copy input data
+    void* mappedInput;
+    vkMapMemory(device, inputBufferMemory, 0, inputSize, 0, &mappedInput);
+    std::memcpy(mappedInput, inputData, inputSize);
+    vkUnmapMemory(device, inputBufferMemory);
+
+    // Create output buffer + memory
+    VkDeviceMemory outputBufferMemory;
+    VkBuffer outputBuffer = createBuffer(outputSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, outputBufferMemory);
+
+    // Create Descriptor Pool if not created
+    if (descriptorPool == VK_NULL_HANDLE) {
+        VkDescriptorPoolSize poolSize{};
+        poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        poolSize.descriptorCount = 2;
+
+        VkDescriptorPoolCreateInfo poolCreateInfo{};
+        poolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolCreateInfo.maxSets = 1;
+        poolCreateInfo.poolSizeCount = 1;
+        poolCreateInfo.pPoolSizes = &poolSize;
+
+        if (vkCreateDescriptorPool(device, &poolCreateInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create descriptor pool");
+        }
+    }
+
+    // Allocate Descriptor Set
+    VkDescriptorSetAllocateInfo allocInfoDS{};
+    allocInfoDS.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfoDS.descriptorPool = descriptorPool;
+    allocInfoDS.descriptorSetCount = 1;
+    allocInfoDS.pSetLayouts = &descriptorSetLayout;
+
+    VkDescriptorSet descriptorSet;
+    if (vkAllocateDescriptorSets(device, &allocInfoDS, &descriptorSet) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate descriptor set");
+    }
+
+    // Setup Descriptor Buffer Info
+    VkDescriptorBufferInfo inputBufferInfo{};
+    inputBufferInfo.buffer = inputBuffer;
+    inputBufferInfo.offset = 0;
+    inputBufferInfo.range = inputSize;
+
+    VkDescriptorBufferInfo outputBufferInfo{};
+    outputBufferInfo.buffer = outputBuffer;
+    outputBufferInfo.offset = 0;
+    outputBufferInfo.range = outputSize;
+
+    VkWriteDescriptorSet descriptorWrites[2]{};
+
+    descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[0].dstSet = descriptorSet;
+    descriptorWrites[0].dstBinding = 0;
+    descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    descriptorWrites[0].descriptorCount = 1;
+    descriptorWrites[0].pBufferInfo = &inputBufferInfo;
+
+    descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[1].dstSet = descriptorSet;
+    descriptorWrites[1].dstBinding = 1;
+    descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    descriptorWrites[1].descriptorCount = 1;
+    descriptorWrites[1].pBufferInfo = &outputBufferInfo;
+
+    vkUpdateDescriptorSets(device, 2, descriptorWrites, 0, nullptr);
+
+    // Record command buffer
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to begin command buffer");
+    }
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+
+    vkCmdDispatch(commandBuffer, groupsX, groupsY, groupsZ);
+
+    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to record command buffer");
+    }
+
+    // Submit and wait
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffer;
+
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+
+    VkFence fence;
+    if (vkCreateFence(device, &fenceInfo, nullptr, &fence) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create fence");
+    }
+
+    if (vkQueueSubmit(computeQueue, 1, &submitInfo, fence) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to submit queue");
+    }
+
+    if (vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to wait for fence");
+    }
+    vkDestroyFence(device, fence, nullptr);
+
+    // Read back output data
+    void* mappedOutput;
+    if (vkMapMemory(device, outputBufferMemory, 0, outputSize, 0, &mappedOutput) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to map output buffer memory");
+    }
+
+    vbyte* outputData = hl_alloc_bytes(outputSize);
+    memcpy(outputData, mappedOutput, outputSize);
+    vkUnmapMemory(device, outputBufferMemory);
+
+    // Cleanup buffers and memories
+    vkDestroyBuffer(device, inputBuffer, nullptr);
+    vkFreeMemory(device, inputBufferMemory, nullptr);
+    vkDestroyBuffer(device, outputBuffer, nullptr);
+    vkFreeMemory(device, outputBufferMemory, nullptr);
+
+    return outputData;
+}
+
+void destroyShaderAndPipeline() {
+    if (computePipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, computePipeline, nullptr);
+        computePipeline = VK_NULL_HANDLE;
+    }
+    if (pipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+        pipelineLayout = VK_NULL_HANDLE;
+    }
+    if (descriptorSetLayout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+        descriptorSetLayout = VK_NULL_HANDLE;
+    }
+    if (computeShaderModule != VK_NULL_HANDLE) {
+        vkDestroyShaderModule(device, computeShaderModule, nullptr);
+        computeShaderModule = VK_NULL_HANDLE;
+    }
+    if (descriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+        descriptorPool = VK_NULL_HANDLE;
+    }
+}
+
+void cleanupVulkan() {
+    destroyShaderAndPipeline();
+
+    if (commandPool != VK_NULL_HANDLE) {
+        vkDestroyCommandPool(device, commandPool, nullptr);
+        commandPool = VK_NULL_HANDLE;
+    }
+
+    if (device != VK_NULL_HANDLE) {
+        vkDestroyDevice(device, nullptr);
+        device = VK_NULL_HANDLE;
+    }
+
+    if (instance != VK_NULL_HANDLE) {
+        vkDestroyInstance(instance, nullptr);
+        instance = VK_NULL_HANDLE;
+    }
 }
 
 //------------------------- HashLink -------------------------//
@@ -367,46 +642,29 @@ HL_PRIM HitResult* HL_NAME(trace_ray_embree)(int id, SimpleRay* _ray) {
 }
 DEFINE_PRIM(_OBJ(_BOOL _F32 _I32 _I32), trace_ray_embree, _I32 _OBJ(_F32 _F32 _F32 _F32 _F32 _F32));
 
-HL_PRIM void HL_NAME(init_opengl)(_NO_ARG) {
-	initOpenGL();
+HL_PRIM void HL_NAME(init_vulkan)(_NO_ARG) {
+	initVulkan();
 }
-DEFINE_PRIM(_VOID, init_opengl, _NO_ARG);
+DEFINE_PRIM(_VOID, init_vulkan, _NO_ARG);
 
-HL_PRIM vbyte* HL_NAME(run_compute_shader_from_src)(vstring* src, vbyte* dataIn, int groupsX, int groupsY, int groupsZ, int sizeBytesIn, int sizeBytesOut) {
-    return run_compute_shader_from_src(
-        hl_to_utf8(src->bytes),
-        dataIn,
-		groupsX,
-		groupsY,
-		groupsZ,
-		sizeBytesIn,
-		sizeBytesOut
-	);
+HL_PRIM vbyte* HL_NAME(run_compute_shader)(vbyte* dataIn, int sizeBytesIn, int sizeBytesOut, int groupsX, int groupsY, int groupsZ) {
+    return runComputeShader(dataIn, sizeBytesIn, sizeBytesOut, groupsX, groupsY, groupsZ);
 }
-DEFINE_PRIM(_BYTES, run_compute_shader_from_src, _STRING _BYTES _I32 _I32 _I32 _I32 _I32);
-
-HL_PRIM vbyte* HL_NAME(run_compute_shader)(int id, vbyte* dataIn, int groupsX, int groupsY, int groupsZ, int sizeBytesIn, int sizeBytesOut) {
-    return run_compute_shader(
-        id,
-        dataIn,
-        groupsX,
-        groupsY,
-        groupsZ,
-        sizeBytesIn,
-        sizeBytesOut
-    );
-}
-DEFINE_PRIM(_BYTES, run_compute_shader, _I32 _BYTES _I32 _I32 _I32 _I32 _I32);
+DEFINE_PRIM(_BYTES, run_compute_shader, _BYTES _I32 _I32 _I32 _I32 _I32);
 
 HL_PRIM void HL_NAME(create_compute_shader)(vstring* src) {
-    create_compute_shader(hl_to_utf8(src->bytes));
+    createDescriptorSetLayout();
+    createPipelineLayout();
+    createComputePipeline(hl_to_utf8(src->bytes));
 }
 DEFINE_PRIM(_VOID, create_compute_shader, _STRING);
 
-HL_PRIM void HL_NAME(remove_compute_shader)(int id) {
-    remove_compute_shader(id);
+HL_PRIM void HL_NAME(destroy_compute_shader)(_NO_ARG) {
+    destroyShaderAndPipeline();
 }
-DEFINE_PRIM(_VOID, remove_compute_shader, _I32);
+DEFINE_PRIM(_VOID, destroy_compute_shader, _NO_ARG);
 
-HL_PRIM void HL_NAME(dummy_func)(_NO_ARG) {}
-DEFINE_PRIM(_VOID, dummy_func, _NO_ARG);
+HL_PRIM void HL_NAME(destroy_vulkan)(_NO_ARG) {
+    cleanupVulkan();
+}
+DEFINE_PRIM(_VOID, destroy_vulkan, _NO_ARG);

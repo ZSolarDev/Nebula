@@ -23,7 +23,7 @@ class GPURaytracer extends Raytracer
 		globalIllum = new FlxSprite();
 		globalIllum.makeGraphic(view.width, view.height, 0x000000);
 		FlxG.state.add(globalIllum);
-		globalIllum.shader = shader;
+		// globalIllum.shader = shader;
 	}
 
 	override public function update(elapsed:Float)
