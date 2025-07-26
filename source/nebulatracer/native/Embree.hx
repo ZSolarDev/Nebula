@@ -1,8 +1,8 @@
 package nebulatracer.native;
 
-import nebulatracer.Global.ExtDynamic;
-import nebulatracer.NebulaTracer.SimpleRay;
 import nebulatracer.RaytracerExt.TraceResult;
+import nebulatracer.NebulaTracer.SimpleRay;
+import nebulatracer.Global.ExtDynamic;
 
 @:hlNative("nebulatracer")
 @:noCompletion
@@ -17,6 +17,8 @@ class Embree
 	public static function refit_bvh_embree(id:Int):Void {}
 
 	public static function rebuild_bvh_embree(id:Int):Void {}
+
+	public static function dummy_func():Void {}
 
 	public static function load_geometry_embree(string:String, id:Int):Void {}
 
