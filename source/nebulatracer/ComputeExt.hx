@@ -41,8 +41,8 @@ class ComputeExt
 
 	public static function initCompute()
 	{
-		Compute.init_opengl();
-		Compute.load_compute_shader("
+		Compute.init_vulkan();
+		Compute.create_compute_shader("
 #version 430
 
 layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
@@ -66,7 +66,6 @@ void main() {
 
 	public static function runCompute()
 	{
-		var out = Compute.run_compute_shader(input, 1, 1, 1, 64, 4);
-		trace(out.getF32(0));
+		var out = Compute.run_compute_shader(input, 64, 4, 1, 1, 1);
 	}
 }
