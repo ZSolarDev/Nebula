@@ -6,14 +6,10 @@ import hl.Bytes;
 @:noCompletion
 class Compute
 {
-	public static function init_vulkan():Void {}
+	public static function init_opengl():Void {}
 
-	public static function create_compute_shader(source:String):Void {}
+	public static function load_compute_shader(source:String):Void {}
 
-	public static function destroy_compute_shader():Void {}
-
-	public static function destroy_vulkan():Void {}
-
-	public static function run_compute_shader(dataIn:Bytes, sizeBytesIn:Int, sizeBytesOut:Int, groupsX:Int, groupsY:Int, groupsZ:Int):Bytes
+	public static function run_compute_shader(dataIn:Bytes, groupsX:Int, groupsY:Int, groupsZ:Int, sizeBytesIn:Int, sizeBytesOut:Int):Bytes
 		return null;
 }

@@ -17,6 +17,15 @@
 #include <chrono>
 #include <mutex>
 
+#define CHECK_GLFW(call) do { \
+    call; \
+    int err = glfwGetError(nullptr); \
+    if (err != GLFW_NO_ERROR) { \
+        std::cerr << "GLFW error after " #call ": " << err << std::endl; \
+    } \
+} while(0)
+
+
 std::mutex glMutex;
 
 #ifdef MemoryBarrier
@@ -25,7 +34,6 @@ std::mutex glMutex;
 
 
 GLFWwindow* window;
-GLFWwindow* limeCtx;
 
 typedef struct
 {
@@ -206,18 +214,22 @@ int groupsY;
 int groupsZ;
 int sizeInBytesIn;
 int sizeInBytesOut;
+GLuint program;
+
 void GLLoop()
 {
+    int dummy;
+	hl_register_thread(&dummy); // why do you whine so much, hashlink? it took me too long to figure out that I need to register the thread before using it...
     while (true) {
-        glMutex.lock();
-		int dupeTask = curTask;
-        glMutex.unlock();
-        switch (dupeTask) {
-		    case 0: // init OpenGL context
+        int task = -1;
+        {
+            std::lock_guard<std::mutex> lock(glMutex);
+            task = curTask;
+        }
+        switch (task) {
+            case 0: { // init OpenGL context
                 taskData = nullptr;
-                if (!glfwInit()) {
-                    std::cerr << "Failed to initialize GLFW\n";
-                }
+                
                 glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
                 glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
                 glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -231,12 +243,14 @@ void GLLoop()
 
                 glfwMakeContextCurrent(window);
                 gladLoadGL(glfwGetProcAddress);
-				glMutex.lock();
-				taskCompleted = true;
-                glMutex.unlock();
-                curTask = -1;
+                {
+                    std::lock_guard<std::mutex> lock(glMutex);
+                    taskCompleted = true;
+                    curTask = -1;
+                }
                 break;
-			case 1: // crate compute shader (src: glsl source)
+            }
+            case 1: { // crate compute shader (src: glsl source)
                 taskData = nullptr;
                 GLuint shader = glCreateShader(GL_COMPUTE_SHADER);
                 glShaderSource(shader, 1, &src, nullptr);
@@ -249,7 +263,7 @@ void GLLoop()
                     glGetShaderInfoLog(shader, 512, nullptr, log);
                     std::cerr << "Compute shader compilation failed:\n" << log << std::endl;
                 }
-                GLuint program = glCreateProgram();
+                program = glCreateProgram();
                 glAttachShader(program, shader);
                 glLinkProgram(program);
 
@@ -260,13 +274,15 @@ void GLLoop()
                     std::cerr << "Program linking failed:\n" << log << std::endl;
                 }
                 glDeleteShader(shader);
-				taskData = (void*)program;
-                glMutex.lock();
-                taskCompleted = true;
-                glMutex.unlock();
-                curTask = -1;
+                {
+                    std::lock_guard<std::mutex> lock(glMutex);
+                    taskCompleted = true;
+                    taskData = (void*)program;
+                    curTask = -1;
+                }
                 break;
-            case 2: // run compute shader (taskData: output bytes, dataIn: input data, groupsX/Y/Z: work group sizes, sizeInBytesIn/Out: sizes of input/output data)
+            }
+            case 2: { // run compute shader (taskData: output bytes, dataIn: input data, groupsX/Y/Z: work group sizes, sizeInBytesIn/Out: sizes of input/output data)
                 GLuint ssboIn, ssboOut;
 
                 // input
@@ -304,52 +320,87 @@ void GLLoop()
                     std::cerr << "OpenGL error after dispatch: " << err << std::endl;
                 }
 
-                taskData = dataOut;
-                glMutex.lock();
-                taskCompleted = true;
-                glMutex.unlock();
-                curTask = -1;
+                {
+                    std::lock_guard<std::mutex> lock(glMutex);
+                    taskCompleted = true;
+                    taskData = dataOut;
+                    curTask = -1;
+                }
                 break;
+            }
             default:
                 break;
 		}
+        glfwPollEvents();
         std::this_thread::sleep_for(std::chrono::microseconds(10));
     }
 }
 
-GLuint program;
 void initOpenGL() {
-    taskCompleted = false;
+    if (!glfwInit()) {
+        std::cerr << "Failed to initialize GLFW\n";
+    }
+    {
+        std::lock_guard<std::mutex> lock(glMutex);
+        taskCompleted = false;
+        curTask = 0;
+    }
     std::thread glThread(GLLoop);
     glThread.detach();
-    curTask = 0;
+    while (true) {
+        {
+            std::lock_guard<std::mutex> lock(glMutex);
+            if (taskCompleted) break;
+        }
+        std::this_thread::sleep_for(std::chrono::microseconds(10));
+    }
 }
 
 void load_compute_shader(const char* glsl) {
-    taskCompleted = false;
-    src = glsl;
-    curTask = 1;
-    while (!taskCompleted) {
+    {
+        std::lock_guard<std::mutex> lock(glMutex);
+        taskCompleted = false;
+        src = glsl;
+        curTask = 1;
+    }
+
+    while (true) {
+        {
+            std::lock_guard<std::mutex> lock(glMutex);
+            if (taskCompleted) break;
+        }
         std::this_thread::sleep_for(std::chrono::microseconds(10));
     }
+
+    std::lock_guard<std::mutex> lock(glMutex);
     program = (GLuint)taskData;
 }
 
 vbyte* run_compute_shader(void* tdataIn, int tgroupsX, int tgroupsY, int tgroupsZ, int tsizeInBytesIn, int tsizeInBytesOut) {
-    dataIn = tdataIn;
-    groupsX = tgroupsX;
-    groupsY = tgroupsY;
-    groupsZ = tgroupsZ;
-    sizeInBytesIn = tsizeInBytesIn;
-    sizeInBytesOut = tsizeInBytesOut;
-    taskCompleted = false;
-    curTask = 2;
-    while (!taskCompleted) {
+    {
+        std::lock_guard<std::mutex> lock(glMutex);
+        dataIn = tdataIn;
+        groupsX = tgroupsX;
+        groupsY = tgroupsY;
+        groupsZ = tgroupsZ;
+        sizeInBytesIn = tsizeInBytesIn;
+        sizeInBytesOut = tsizeInBytesOut;
+        taskCompleted = false;
+        curTask = 2;
+    }
+
+    while (true) {
+        {
+            std::lock_guard<std::mutex> lock(glMutex);
+            if (taskCompleted) break;
+        }
         std::this_thread::sleep_for(std::chrono::microseconds(10));
     }
-    vbyte* dataOut = (vbyte*)taskData;
-	return dataOut;
+
+    std::lock_guard<std::mutex> lock(glMutex);
+    return (vbyte*)taskData;
 }
+
 
 //------------------------- HashLink -------------------------//
 
@@ -399,22 +450,8 @@ HL_PRIM void HL_NAME(init_opengl)(_NO_ARG) {
 }
 DEFINE_PRIM(_VOID, init_opengl, _NO_ARG);
 
-HL_PRIM vbyte* HL_NAME(run_compute_shader_from_src)(vstring* src, vbyte* dataIn, int groupsX, int groupsY, int groupsZ, int sizeBytesIn, int sizeBytesOut) {
-    return run_compute_shader_from_src(
-        hl_to_utf8(src->bytes),
-        dataIn,
-		groupsX,
-		groupsY,
-		groupsZ,
-		sizeBytesIn,
-		sizeBytesOut
-	);
-}
-DEFINE_PRIM(_BYTES, run_compute_shader_from_src, _STRING _BYTES _I32 _I32 _I32 _I32 _I32);
-
-HL_PRIM vbyte* HL_NAME(run_compute_shader)(int id, vbyte* dataIn, int groupsX, int groupsY, int groupsZ, int sizeBytesIn, int sizeBytesOut) {
+HL_PRIM vbyte* HL_NAME(run_compute_shader)(vbyte* dataIn, int groupsX, int groupsY, int groupsZ, int sizeBytesIn, int sizeBytesOut) {
     return run_compute_shader(
-        id,
         dataIn,
         groupsX,
         groupsY,
@@ -423,14 +460,9 @@ HL_PRIM vbyte* HL_NAME(run_compute_shader)(int id, vbyte* dataIn, int groupsX, i
         sizeBytesOut
     );
 }
-DEFINE_PRIM(_BYTES, run_compute_shader, _I32 _BYTES _I32 _I32 _I32 _I32 _I32);
+DEFINE_PRIM(_BYTES, run_compute_shader, _BYTES _I32 _I32 _I32 _I32 _I32);
 
-HL_PRIM void HL_NAME(create_compute_shader)(vstring* src) {
-    create_compute_shader(hl_to_utf8(src->bytes));
+HL_PRIM void HL_NAME(load_compute_shader)(vstring* src) {
+    load_compute_shader(hl_to_utf8(src->bytes));
 }
-DEFINE_PRIM(_VOID, create_compute_shader, _STRING);
-
-HL_PRIM void HL_NAME(remove_compute_shader)(int id) {
-    remove_compute_shader(id);
-}
-DEFINE_PRIM(_VOID, remove_compute_shader, _I32);
+DEFINE_PRIM(_VOID, load_compute_shader, _STRING);
