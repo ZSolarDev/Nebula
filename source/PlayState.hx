@@ -8,7 +8,7 @@ import nebula.mesh.*;
 import nebula.view.*;
 import nebula.view.renderers.*;
 import nebula.view.renderers.Raytracer.FloatColor;
-import nebulatracer.ComputeExt;
+import nebulatracer.ComputeShaders;
 import openfl.Vector;
 import openfl.geom.Vector3D;
 import sys.thread.Thread;
@@ -889,7 +889,6 @@ class PlayState extends FlxState
 	override public function update(elapsed:Float):Void
 	{
 		super.update(elapsed);
-		ComputeExt.runCompute();
 		if (FlxG.keys.justPressed.J)
 			scene = cast(cast(scene, Int) + 1) % maxScenes;
 		if (FlxG.keys.justPressed.R)

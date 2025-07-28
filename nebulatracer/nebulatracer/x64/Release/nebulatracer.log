@@ -4,7 +4,7 @@ C:\Haxe-Libraries\Nebula\nebulatracer\nebulatracer.cpp(564,40): warning C4267: '
   Generating code
   2 of 562 functions ( 0.4%) were compiled, the rest were copied from previous compilation.
     0 functions were new in current compilation
-    1 functions had inline decision re-evaluated but remain unchanged
+    2 functions had inline decision re-evaluated but remain unchanged
   Finished generating code
 shaderc_combined.lib(shaderc.cc.obj) : warning LNK4099: PDB 'shaderc.pdb' was not found with 'shaderc_combined.lib(shaderc.cc.obj)' or at 'C:\Haxe-Libraries\Nebula\nebulatracer\x64\Release\shaderc.pdb'; linking object as if no debug info
 shaderc_combined.lib(compiler.cc.obj) : warning LNK4099: PDB 'shaderc_util.pdb' was not found with 'shaderc_combined.lib(compiler.cc.obj)' or at 'C:\Haxe-Libraries\Nebula\nebulatracer\x64\Release\shaderc_util.pdb'; linking object as if no debug info

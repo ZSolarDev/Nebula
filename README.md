@@ -27,6 +27,7 @@ A 3D renderer for HaxeFlixel
 ## EMBREE TODO:
 - [X] Make the externs for Embree/hashlink
 - [ ] Make the externs for Embree/hxcpp
+- [X] Integrate with Haxe
 - [X] Integrate with Nebula
     - [X] Make non-tracing functions
     - [X] Make a ray trace function
@@ -35,6 +36,7 @@ A 3D renderer for HaxeFlixel
 ## COMPUTE SHADERS TODO:
 - [x] Make the externs for Compute Shaders/hashlink
 - [ ] Make the externs for Compute Shaders/hxcpp
+- [X] Integrate with Haxe
 - [ ] Integrate with Nebula
 
 Also make demos for the readme(you should try something like this https://youtu.be/Pj1P0zV4zDI?si=vkvAiw9wYIPGxvK1 try it with particles, then try making a volume with points indtead of particles and sample that with rays and see the difference.)
