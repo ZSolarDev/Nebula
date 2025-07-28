@@ -41,20 +41,23 @@ class ComputeShaders
 	public static function runComputeShader(dataIn:Bytes, sizeBytesOut:Int, groupsX:Int, groupsY:Int, groupsZ:Int):hl.Bytes
 		@:privateAccess return Compute.run_compute_shader(dataIn.b, dataIn.length, sizeBytesOut, groupsX, groupsY, groupsZ);
 
-	public static function runComputeShaderDynIn(dataIn:Dynamic, dataOutInBytes:Int, groupsX:Int, groupsY:Int, groupsZ:Int):hl.Bytes
-		return Compute.run_compute_shader(Serializer.serialize(dataIn), Serializer.serialize(dataIn).length, dataOutInBytes, groupsX, groupsY, groupsZ);
-
-	public static function runComputeShaderDynInDynOutFormat(dataIn:Dynamic, dataOutFormat:Dynamic, groupsX:Int, groupsY:Int, groupsZ:Int):hl.Bytes
-		return Compute.run_compute_shader(Serializer.serialize(dataIn), Serializer.serialize(dataIn).length,
-			new ByteLengthGetter().getLenBytes(dataOutFormat), groupsX, groupsY, groupsZ);
-
-	public static function runComputeShaderDynInDeserialize(dataIn:Dynamic, dataOutFormat:Dynamic, groupsX:Int, groupsY:Int, groupsZ:Int):Dynamic
+	public static function runComputeShaderDynIn(dataIn:Any, dataOutInBytes:Int, groupsX:Int, groupsY:Int, groupsZ:Int):hl.Bytes
 	{
-		HexDump.dump(Compute.run_compute_shader(Serializer.serialize(dataIn), Serializer.serialize(dataIn).length,
-			new ByteLengthGetter().getLenBytes(dataOutFormat), groupsX, groupsY, groupsZ),
-			900);
-		return new Deserializer().deserialize(Compute.run_compute_shader(Serializer.serialize(dataIn), Serializer.serialize(dataIn).length,
-			new ByteLengthGetter().getLenBytes(dataOutFormat), groupsX, groupsY, groupsZ),
+		var serialized = Serializer.serialize(dataIn);
+		return Compute.run_compute_shader(serialized, serialized.length, dataOutInBytes, groupsX, groupsY, groupsZ);
+	}
+
+	public static function runComputeShaderDynInDynOutFormat(dataIn:Any, dataOutFormat:Any, groupsX:Int, groupsY:Int, groupsZ:Int):hl.Bytes
+	{
+		var serialized = Serializer.serialize(dataIn);
+		return Compute.run_compute_shader(serialized, serialized.length, new ByteLengthGetter().getLenBytes(dataOutFormat), groupsX, groupsY, groupsZ);
+	}
+
+	public static function runComputeShaderDynInDeserialize(dataIn:Any, dataOutFormat:Any, groupsX:Int, groupsY:Int, groupsZ:Int):Any
+	{
+		var serialized = Serializer.serialize(dataIn);
+		return new Deserializer().deserialize(Compute.run_compute_shader(serialized, serialized.length, new ByteLengthGetter().getLenBytes(dataOutFormat),
+			groupsX, groupsY, groupsZ),
 			dataOutFormat);
 	}
 }
@@ -81,14 +84,14 @@ class HexDump
 
 private class Serializer
 {
-	public static function serialize(object:Dynamic):Bytes
+	public static function serialize(object:Any):Bytes
 	{
 		var output = new BytesOutput();
 		writeValue(output, object);
 		return output.getBytes();
 	}
 
-	static function writeValue(output:BytesOutput, value:Dynamic)
+	static function writeValue(output:BytesOutput, value:Any)
 	{
 		if (value is Float)
 			output.writeFloat(value);
@@ -98,7 +101,7 @@ private class Serializer
 			output.writeInt32(value ? 1 : 0);
 		else if (value is Array)
 		{
-			var arr:Array<Dynamic> = cast value;
+			var arr:Array<Any> = cast value;
 			for (v in arr)
 				writeValue(output, v);
 		}
@@ -117,13 +120,13 @@ class Deserializer
 
 	public function new() {}
 
-	public function deserialize(bytes:hl.Bytes, schema:Dynamic):Dynamic
+	public function deserialize(bytes:hl.Bytes, schema:Any):Any
 	{
 		pos = 0;
 		return readValue(bytes, schema);
 	}
 
-	function getSize(schema:Dynamic):Int
+	function getSize(schema:Any):Int
 	{
 		if (schema is Int || schema is Float || schema is Bool)
 		{
@@ -131,7 +134,7 @@ class Deserializer
 		}
 		else if (schema is Array)
 		{
-			var arr:Array<Dynamic> = cast schema;
+			var arr:Array<Any> = cast schema;
 			if (arr.length == 0)
 				return 0;
 			var elemSize = getSize(arr[0]);
@@ -167,7 +170,7 @@ class Deserializer
 		pos = alignUp(pos, to);
 	}
 
-	function readValue(bytes:hl.Bytes, schema:Dynamic):Dynamic
+	function readValue(bytes:hl.Bytes, schema:Any):Any
 	{
 		var alignTo = getAlignment(schema);
 		align(alignTo);
@@ -192,7 +195,7 @@ class Deserializer
 		}
 		else if (schema is Array)
 		{
-			var arr:Array<Dynamic> = cast schema;
+			var arr:Array<Any> = cast schema;
 			var result = [];
 			if (arr.length == 0)
 				return result;
@@ -229,7 +232,7 @@ class Deserializer
 		return null;
 	}
 
-	function getAlignment(schema:Dynamic):Int
+	function getAlignment(schema:Any):Int
 	{
 		if (schema == null)
 			return 4;
@@ -243,7 +246,7 @@ class Deserializer
 
 		if (schema is Array)
 		{
-			var arr:Array<Dynamic> = cast schema;
+			var arr:Array<Any> = cast schema;
 			return arr.length > 0 ? getAlignment(arr[0]) : 4;
 		}
 
@@ -270,10 +273,10 @@ private class ByteLengthGetter
 
 	public function new() {}
 
-	public function getLenBytes(object:Dynamic):Int
+	public function getLenBytes(object:Any):Int
 		return _getLenBytes(object);
 
-	function _getLenBytes(value:Dynamic):Int
+	function _getLenBytes(value:Any):Int
 	{
 		if (value is Float)
 			curAmt += 4;
@@ -283,7 +286,7 @@ private class ByteLengthGetter
 			curAmt += 4;
 		else if (value is Array)
 		{
-			var arr:Array<Dynamic> = cast value;
+			var arr:Array<Any> = cast value;
 			for (v in arr)
 				_getLenBytes(v);
 		}

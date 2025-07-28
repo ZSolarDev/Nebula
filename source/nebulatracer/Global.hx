@@ -7,7 +7,7 @@ class Global
 	@:allow(nebulatracer.NebulaTracer)
 	static var EMBREEID:Int = -1;
 
-	public function padArrayInt(arr:Array<Int>, len:Int):Array<Int>
+	public static function padArrayInt(arr:Array<Int>, len:Int):Array<Int>
 	{
 		while (arr.length < len)
 		{
@@ -16,7 +16,7 @@ class Global
 		return arr;
 	}
 
-	public function padArrayFloat(arr:Array<Float>, len:Float):Array<Float>
+	public static function padArrayFloat(arr:Array<Float>, len:Float):Array<Float>
 	{
 		while (arr.length < len)
 		{

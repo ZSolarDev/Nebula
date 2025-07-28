@@ -1,0 +1,161 @@
+#version 450     
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(std430, binding = 0) buffer InputBuffer {
+    float data[];
+};
+
+layout(std430, binding = 1) buffer OutputBuffer {
+    //HitResult results[];
+    float color[];
+};
+
+const uint RAY_COUNT = 480000;
+const uint RAY_STRIDE = 6;
+
+const uint OBJECTS_OFFSET = RAY_COUNT * RAY_STRIDE;
+const uint OBJECT_COUNT = 100000;
+const uint OBJECT_STRIDE = 4; // 4 floats per object (vertexStart, vertexCount, indexStart, indexCount)
+
+const uint VERTICES_OFFSET = OBJECTS_OFFSET + OBJECT_COUNT * OBJECT_STRIDE;
+const uint VERTEX_COUNT = 300000;
+const uint VERTEX_STRIDE = 3; // vec3 per vertex
+
+const uint INDICES_OFFSET = VERTICES_OFFSET + VERTEX_COUNT * VERTEX_STRIDE;
+const uint INDEX_COUNT = 300000;
+
+struct Ray {
+    float origin[3];
+    float direction[3];
+};
+
+struct Object {
+    uint vertexStart;
+    uint vertexCount;
+    uint indexStart;
+    uint indexCount;
+};
+
+struct HitResult {
+    uint hit;         // 0 = no hit, 1 = hit
+    float dist;       // distance to hit point, large value if no hit
+    uint objectId;    // index in objects array
+    uint primId;      // triangle index inside the object
+};
+
+Object loadObject(uint objId) {
+    uint base = OBJECTS_OFFSET + objId * OBJECT_STRIDE;
+    Object o;
+    o.vertexStart = uint(data[base + 0]);
+    o.vertexCount = uint(data[base + 1]);
+    o.indexStart = uint(data[base + 2]);
+    o.indexCount = uint(data[base + 3]);
+    return o;
+}
+
+vec3 loadVertex(uint vId) {
+    uint base = VERTICES_OFFSET + vId * VERTEX_STRIDE;
+    float x = data[base + 0];
+    float y = data[base + 1];
+    float z = data[base + 2];
+    return vec3(x, y, z);
+}
+
+uint loadIndex(uint iId) {
+    return uint(data[INDICES_OFFSET + iId]);
+}
+
+Ray loadRay(uint idx) {
+    uint base = idx * RAY_STRIDE;
+    Ray r;
+    r.origin[0] = data[base + 0];
+    r.origin[1] = data[base + 1];
+    r.origin[2] = data[base + 2];
+    r.direction[0] = data[base + 3];
+    r.direction[1] = data[base + 4];
+    r.direction[2] = data[base + 5];
+    return r;
+}
+
+
+bool intersectTriangle(vec3 orig, vec3 dir, vec3 v0, vec3 v1, vec3 v2, out float t) {
+    const float EPSILON = 1e-6;
+    vec3 edge1 = v1 - v0;
+    vec3 edge2 = v2 - v0;
+    vec3 pvec = cross(dir, edge2);
+    float det = dot(edge1, pvec);
+
+    if (abs(det) < EPSILON)
+        return false;
+
+    float invDet = 1.0 / det;
+    vec3 tvec = orig - v0;
+    float u = dot(tvec, pvec) * invDet;
+    if (u < 0.0 || u > 1.0)
+        return false;
+
+    vec3 qvec = cross(tvec, edge1);
+    float v = dot(dir, qvec) * invDet;
+    if (v < 0.0 || u + v > 1.0)
+        return false;
+
+    t = dot(edge2, qvec) * invDet;
+    if (t < EPSILON)
+        return false;
+
+    return true;
+}
+
+HitResult traceRay(Ray ray){
+    float closestT = 1e30;
+    uint hitObject = uint(-1);
+    uint hitPrim = uint(-1);
+    bool hitFound = false;
+
+    for (uint objId = 0u; objId < OBJECT_COUNT; objId++) {
+        Object obj = loadObject(objId);
+
+        for (uint tri = 0u; tri < obj.indexCount / 3u; tri++) {
+            uint i0 = loadIndex(obj.indexStart + tri * 3u + 0u) + obj.vertexStart;
+            uint i1 = loadIndex(obj.indexStart + tri * 3u + 1u) + obj.vertexStart;
+            uint i2 = loadIndex(obj.indexStart + tri * 3u + 2u) + obj.vertexStart;
+
+            vec3 v0 = loadVertex(i0);
+            vec3 v1 = loadVertex(i1);
+            vec3 v2 = loadVertex(i2);
+
+            float t;
+            if (intersectTriangle(vec3(ray.origin[0], ray.origin[1], ray.origin[2]), vec3(ray.direction[0], ray.direction[1], ray.direction[2]), v0, v1, v2, t)) {
+                if (t < closestT) {
+                    closestT = t;
+                    hitObject = objId;
+                    hitPrim = tri;
+                    hitFound = true;
+                }
+            }
+        }
+    }
+
+    HitResult result;
+    if (hitFound) {
+        result.hit = 1u;
+        result.dist = closestT;
+        result.objectId = hitObject;
+        result.primId = hitPrim;
+    } else {
+        result.hit = 0u;
+        result.dist = -1.0;
+        result.objectId = uint(-1);
+        result.primId = uint(-1);
+    }
+
+    return result;
+}
+
+void main() {
+    //uint idx = gl_GlobalInvocationID.x;
+    //Ray ray = loadRay(idx);
+    color[idx * 3 + 0] = 1;
+    color[idx * 3 + 1] = 1;
+    color[idx * 3 + 2] = 1;
+}
