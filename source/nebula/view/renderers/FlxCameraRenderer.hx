@@ -55,7 +55,7 @@ class FlxCameraRenderer extends FlxCamera implements ViewRenderer
 				}
 			}
 		}
-		processBuffers(sortedMeshes, view.camSpaceTris, view.meshes);
+		// processBuffers(sortedMeshes, view.camSpaceTris, view.meshes);
 		for (projectedMesh in sortedMeshes)
 		{
 			var mesh = projectedMesh.mesh;

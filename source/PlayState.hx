@@ -7,8 +7,7 @@ import haxe.Timer;
 import nebula.mesh.*;
 import nebula.view.*;
 import nebula.view.renderers.*;
-import nebula.view.renderers.Raytracer.FloatColor;
-import nebulatracer.ComputeShaders;
+import nebulatracer.native.Embree;
 import openfl.Vector;
 import openfl.geom.Vector3D;
 import sys.thread.Thread;
@@ -30,14 +29,13 @@ enum abstract TestSceneType(Int)
 
 class PlayState extends FlxState
 {
-	var cpuRaytracer:GPURaytracer;
+	var cpuRaytracer:Raytracer;
 	var separated:Bool = false;
 	var view:N3DView;
 	var controls:FlxText;
 	var cam:FlxCamera;
 	var scene(default, set):TestSceneType;
 	var maxScenes = 2;
-	var aqm:Bool = true;
 
 	function set_scene(val:TestSceneType):TestSceneType
 	{
@@ -97,7 +95,7 @@ class PlayState extends FlxState
 					lightPointers: [
 						{
 							pos: new Vector3D(0, -150, -150),
-							color: new FloatColor(1, 1, 0),
+							color: FlxColor.YELLOW,
 							power: 320,
 							meshPart: sun
 						}
@@ -112,7 +110,7 @@ class PlayState extends FlxState
 					lightPointers: [
 						{
 							pos: new Vector3D(0, -150, 300),
-							color: new FloatColor(1, 1, 0),
+							color: FlxColor.YELLOW,
 							power: 320,
 							meshPart: otherSun
 						}
@@ -198,7 +196,7 @@ class PlayState extends FlxState
 					lightPointers: [
 						{
 							pos: new Vector3D(0, -wallSize + 0.1, 0),
-							color: new FloatColor(1, 1, 1),
+							color: FlxColor.WHITE,
 							power: 400,
 							meshPart: light
 						}
@@ -235,9 +233,6 @@ class PlayState extends FlxState
         Enter: Show/Start Render
         Escape: Hide render
         Backspace: Hide/Show Rasterizer
-        Backslash: Automatic Quality mode toggle
-        Minus: Decerase GI resolution
-        Plus: Increase GI resolution
         ' : '
         Minus: Decerase GI resolution
         Plus: Increase GI resolution
@@ -248,12 +243,11 @@ class PlayState extends FlxState
 		{
 			view = new N3DView(FlxG.width, FlxG.height, FlxCameraRenderer);
 			add(view);
-			cpuRaytracer = new GPURaytracer(view);
-			cpuRaytracer.giRes = 2;
+			cpuRaytracer = new Raytracer(view);
 		}
 		else
 		{
-			view = new N3DView(FlxG.width, FlxG.height, GPURaytracer);
+			view = new N3DView(FlxG.width, FlxG.height, Raytracer);
 			add(view);
 			cpuRaytracer = cast view.renderer;
 			cpuRaytracer.giRes = 8;
@@ -445,25 +439,6 @@ class PlayState extends FlxState
 	var renderText = '';
 	var lastRenderTime:Float = 0;
 
-	public function render(res:Int, threaded:Bool)
-	{
-		cpuRaytracer.giRes = res;
-		var start = Timer.stamp();
-		if (threaded)
-		{
-			Thread.create(() ->
-			{
-				cpuRaytracer.renderScene();
-				lastRenderTime = Timer.stamp() - start;
-			});
-		}
-		else
-		{
-			cpuRaytracer.renderScene();
-			lastRenderTime = Timer.stamp() - start;
-		}
-	}
-
 	override public function update(elapsed:Float):Void
 	{
 		super.update(elapsed);
@@ -473,10 +448,19 @@ class PlayState extends FlxState
 			renderText = cpuRaytracer.rendering ? 'Rendering... ${Math.round(cpuRaytracer.prog / cpuRaytracer.maxProg * 100)}%' : lastRenderTime != 0 ? 'Last Render Time: ${formatTimeVerbose(lastRenderTime)}' : '';
 			controls.text += renderText;
 			var threaded = true;
-			if (FlxG.keys.justPressed.ENTER && !aqm)
+			if (FlxG.keys.justPressed.ENTER)
 			{
 				cpuRaytracer.globalIllum.visible = true;
-				render(1, threaded);
+				if (threaded)
+					Thread.create(() ->
+					{
+						var start = Timer.stamp();
+						cpuRaytracer.renderScene();
+						var end = Timer.stamp();
+						lastRenderTime = end - start;
+					});
+				else
+					cpuRaytracer.renderScene();
 			}
 			if (FlxG.keys.justPressed.ESCAPE)
 				cpuRaytracer.globalIllum.visible = false;
@@ -484,40 +468,17 @@ class PlayState extends FlxState
 			{
 				view.render = !view.render;
 			}
-			if (aqm)
-			{
-				if (FlxG.keys.pressed.W || FlxG.keys.pressed.S || FlxG.keys.pressed.A || FlxG.keys.pressed.D || FlxG.keys.pressed.SPACE
-					|| FlxG.keys.pressed.SHIFT || FlxG.mouse.pressed)
-				{
-					render(30, threaded);
-				}
-				if (!cpuRaytracer.rendering && cpuRaytracer.giRes > 5)
-				{
-					cpuRaytracer.giRes--;
-					render(cpuRaytracer.giRes, threaded);
-				}
-			}
 		}
-
 		if (FlxG.keys.justPressed.R && !cpuRaytracer.rendering)
 			FlxG.switchState(() -> new PlayState(!separated));
 		else if (FlxG.keys.justPressed.R && cpuRaytracer.rendering)
 			trace('Rendering, please wait for it to finish before switching modes.');
-		if (FlxG.keys.justPressed.MINUS && !cpuRaytracer.rendering && !aqm)
+		if (FlxG.keys.justPressed.MINUS && !separated)
 			cpuRaytracer.giRes -= 1;
-		else if (FlxG.keys.justPressed.MINUS && cpuRaytracer.rendering && !aqm)
-			trace('Rendering, please wait for it to finish before changing resolution.');
-		if (FlxG.keys.justPressed.PLUS && !cpuRaytracer.rendering && !aqm)
+		if (FlxG.keys.justPressed.PLUS && !separated)
 			cpuRaytracer.giRes += 1;
-		else if (FlxG.keys.justPressed.PLUS && cpuRaytracer.rendering && !aqm)
-			trace('Rendering, please wait for it to finish before changing resolution.');
-		if (FlxG.keys.justPressed.BACKSLASH)
-			aqm = !aqm;
 
 		if (FlxG.keys.justPressed.J)
 			scene = cast(cast(scene, Int) + 1) % maxScenes;
-
-		view.canMove = !cpuRaytracer.rendering;
-		cpuRaytracer.clearFrame = !aqm;
 	}
 }
