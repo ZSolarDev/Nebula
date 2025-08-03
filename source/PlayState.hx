@@ -65,21 +65,24 @@ class PlayState extends FlxState
 				var redSphere = createSphereMesh(-80, -radius, 20, radius, FlxColor.RED, sphereDetail, sphereDetail);
 				redSphere.raytracingProperties = {
 					reflectiveness: 1,
-					emissiveness: 0,
+					lightColor: FlxColor.BLACK,
+					lightPower: 0,
 					isEmitter: false,
 					lightPointers: []
 				};
 				var greenSphere = createSphereMesh(0, -radius, 20, radius, FlxColor.GREEN, sphereDetail, sphereDetail);
 				greenSphere.raytracingProperties = {
 					reflectiveness: 1,
-					emissiveness: 0,
+					lightColor: FlxColor.BLACK,
+					lightPower: 0,
 					isEmitter: false,
 					lightPointers: []
 				};
 				var blueSphere = createSphereMesh(80, -radius, 20, radius, FlxColor.BLUE, sphereDetail, sphereDetail);
 				blueSphere.raytracingProperties = {
 					reflectiveness: 1,
-					emissiveness: 0,
+					lightColor: FlxColor.BLACK,
+					lightPower: 0,
 					isEmitter: false,
 					lightPointers: []
 				};
@@ -90,13 +93,12 @@ class PlayState extends FlxState
 				var sun = createSphereMesh(0, -150, -150, 30, FlxColor.YELLOW, sphereDetail, sphereDetail);
 				sun.raytracingProperties = {
 					reflectiveness: 0,
-					emissiveness: 1,
 					isEmitter: true,
+					lightColor: FlxColor.YELLOW,
+					lightPower: 320,
 					lightPointers: [
 						{
 							pos: new Vector3D(0, -150, -150),
-							color: FlxColor.YELLOW,
-							power: 320,
 							meshPart: sun
 						}
 					]
@@ -105,13 +107,12 @@ class PlayState extends FlxState
 				var otherSun = createSphereMesh(0, -150, 300, 30, FlxColor.YELLOW, sphereDetail, sphereDetail);
 				otherSun.raytracingProperties = {
 					reflectiveness: 0,
-					emissiveness: 1,
 					isEmitter: true,
+					lightColor: FlxColor.YELLOW,
+					lightPower: 320,
 					lightPointers: [
 						{
 							pos: new Vector3D(0, -150, 300),
-							color: FlxColor.YELLOW,
-							power: 320,
 							meshPart: otherSun
 						}
 					]
@@ -131,36 +132,41 @@ class PlayState extends FlxState
 				var floor = makeQuad(-wallSize, -wallSize, -wallSize, wallSize * 2, wallSize * 2, FlxColor.WHITE, XZ);
 				floor.raytracingProperties = {
 					reflectiveness: 0,
-					emissiveness: 0,
 					isEmitter: false,
+					lightColor: FlxColor.BLACK,
+					lightPower: 0,
 					lightPointers: []
 				}
 				var ceiling = makeQuad(-wallSize, wallSize, -wallSize, wallSize * 2, wallSize * 2, FlxColor.WHITE, XZ);
 				ceiling.raytracingProperties = {
 					reflectiveness: 0,
-					emissiveness: 0,
 					isEmitter: false,
+					lightColor: FlxColor.BLACK,
+					lightPower: 0,
 					lightPointers: []
 				}
 				var backWall = makeQuad(-wallSize, -wallSize, -wallSize, wallSize * 2, wallSize * 2, FlxColor.WHITE, XY);
 				backWall.raytracingProperties = {
 					reflectiveness: 0,
-					emissiveness: 0,
 					isEmitter: false,
+					lightColor: FlxColor.BLACK,
+					lightPower: 0,
 					lightPointers: []
 				}
 				var leftWall = makeQuad(-wallSize, -wallSize, -wallSize, wallSize * 2, wallSize * 2, FlxColor.RED, YZ);
 				leftWall.raytracingProperties = {
 					reflectiveness: 0,
-					emissiveness: 0,
 					isEmitter: false,
+					lightColor: FlxColor.BLACK,
+					lightPower: 0,
 					lightPointers: []
 				}
 				var rightWall = makeQuad(wallSize, -wallSize, -wallSize, wallSize * 2, wallSize * 2, FlxColor.GREEN, YZ);
 				rightWall.raytracingProperties = {
 					reflectiveness: 0,
-					emissiveness: 0,
 					isEmitter: false,
+					lightColor: FlxColor.BLACK,
+					lightPower: 400,
 					lightPointers: []
 				}
 
@@ -171,15 +177,17 @@ class PlayState extends FlxState
 				var sphere1 = createSphereMesh(-30, wallSize - radius1, -30, radius1, FlxColor.WHITE, sphereDetail, sphereDetail);
 				sphere1.raytracingProperties = {
 					reflectiveness: 1,
-					emissiveness: 0,
 					isEmitter: false,
+					lightColor: FlxColor.BLACK,
+					lightPower: 0,
 					lightPointers: []
 				};
 				var sphere2 = createSphereMesh(40, wallSize - radius2, 30, radius2, FlxColor.WHITE, sphereDetail, sphereDetail);
 				sphere2.raytracingProperties = {
 					reflectiveness: 1,
-					emissiveness: 0,
 					isEmitter: false,
+					lightColor: FlxColor.BLACK,
+					lightPower: 0,
 					lightPointers: []
 				};
 				view.pushMesh(new Mesh(0, 0, 0, [sphere1, sphere2]));
@@ -191,13 +199,12 @@ class PlayState extends FlxState
 				var light = makeQuad(-lightSize / 2, -wallSize + 0.1, -lightSize / 2, lightSize, lightSize, FlxColor.WHITE, XZ);
 				light.raytracingProperties = {
 					reflectiveness: 0,
-					emissiveness: 1,
 					isEmitter: true,
+					lightColor: FlxColor.WHITE,
+					lightPower: 400,
 					lightPointers: [
 						{
 							pos: new Vector3D(0, -wallSize + 0.1, 0),
-							color: FlxColor.WHITE,
-							power: 400,
 							meshPart: light
 						}
 					]
@@ -388,8 +395,9 @@ class PlayState extends FlxState
 				part.color = color;
 				part.raytracingProperties = {
 					reflectiveness: 0.1,
-					emissiveness: 0,
 					isEmitter: false,
+					lightColor: FlxColor.BLACK,
+					lightPower: 0.0,
 					lightPointers: []
 				}
 

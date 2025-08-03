@@ -1,6 +1,7 @@
 package nebula.mesh;
 
 import flixel.graphics.FlxGraphic;
+import flixel.util.FlxColor;
 import lime.utils.Log;
 import nebula.view.renderers.Raytracer.FloatColor;
 import nebula.view.renderers.Raytracer.Light;
@@ -23,7 +24,8 @@ class MeshPart
 	public var raytracingProperties:
 		{
 			reflectiveness:Float,
-			emissiveness:Float,
+			lightColor:FlxColor,
+			lightPower:Float,
 			lightPointers:Array<Light>,
 			isEmitter:Bool
 		};

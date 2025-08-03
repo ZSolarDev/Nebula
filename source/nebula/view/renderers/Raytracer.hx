@@ -31,8 +31,6 @@ typedef GeometryMeshPart =
 typedef Light =
 {
 	var pos:Vector3D;
-	var color:FlxColor;
-	var power:Float;
 	var meshPart:MeshPart;
 }
 
@@ -362,16 +360,18 @@ class Raytracer implements ViewRenderer extends FlxCamera
 					var shadowStrength = litCount / shadowSamples; // between 0 and 1
 
 					var diff = Vec3DHelper.subtract(light.pos, hitPos);
-					var distFalloff = 1.0 - (diff.length / light.power);
+					var distFalloff = 1.0 - (diff.length / light.meshPart.raytracingProperties.lightPower);
 					distFalloff = Math.max(0, distFalloff);
 					var darkenedSkyColor = FloatColor.multiplyFloat(FloatColor.fromFlxColor(skyColor), (1 - shadowStrength) * 0.1);
 					var finalPartColor = FloatColor.lerpColor(part._color, darkenedSkyColor, (1 - shadowStrength) * 0.9);
 					var baseDarkened = FloatColor.multiplyFloat(finalPartColor, distFalloff + 0.001);
 					var lightIntensity = distFalloff * shadowStrength;
-					var lightSaturation = rgbToSaturation(light.color.red, light.color.green, light.color.blue);
+					var lightSaturation = rgbToSaturation(light.meshPart.raytracingProperties.lightColor.red,
+						light.meshPart.raytracingProperties.lightColor.green, light.meshPart.raytracingProperties.lightColor.blue);
 					var lightDivisor = 15 * (1 - lightSaturation) + 1 * lightSaturation;
 					lightIntensity = Math.min(1, lightIntensity / lightDivisor);
-					color = FloatColor.addColor(color, FloatColor.lerpColor(baseDarkened, FloatColor.fromFlxColor(light.color), lightIntensity));
+					color = FloatColor.addColor(color,
+						FloatColor.lerpColor(baseDarkened, FloatColor.fromFlxColor(light.meshPart.raytracingProperties.lightColor), lightIntensity));
 				}
 			}
 			var hemisphereSamples = generateHemisphereSamples(32);
