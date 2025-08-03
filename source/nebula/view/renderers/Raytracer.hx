@@ -216,7 +216,7 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		var out = [];
 		for (part in source)
 		{
-			var copied = new MeshPart(part.vertices.copy(), part.indices.copy(), part.uvt.copy(), part.normals.copy(), part.graphic, false);
+			var copied = new MeshPart(part.vertices.copy(), part.indices.copy(), part.uvs.copy(), part.normals.copy(), part.graphic, false);
 			out.push(copied);
 		}
 		return out;

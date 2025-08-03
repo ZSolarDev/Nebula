@@ -25,6 +25,7 @@ enum abstract TestSceneType(Int)
 {
 	var THREE_SPHERES = 0;
 	var CORNELL_BOX = 1;
+	var TEXTURE_TEST = 2;
 }
 
 class PlayState extends FlxState
@@ -35,7 +36,7 @@ class PlayState extends FlxState
 	var controls:FlxText;
 	var cam:FlxCamera;
 	var scene(default, set):TestSceneType;
-	var maxScenes = 2;
+	var maxScenes = 3;
 
 	function set_scene(val:TestSceneType):TestSceneType
 	{
@@ -129,7 +130,7 @@ class PlayState extends FlxState
 
 				var wallSize = 100.0;
 
-				var floor = makeQuad(-wallSize, -wallSize, -wallSize, wallSize * 2, wallSize * 2, FlxColor.WHITE, XZ);
+				var floor = makeQuad(-wallSize, -wallSize, -wallSize, wallSize * 2, wallSize * 2, FlxColor.GRAY, XZ);
 				floor.raytracingProperties = {
 					reflectiveness: 0,
 					isEmitter: false,
@@ -137,7 +138,7 @@ class PlayState extends FlxState
 					lightPower: 0,
 					lightPointers: []
 				}
-				var ceiling = makeQuad(-wallSize, wallSize, -wallSize, wallSize * 2, wallSize * 2, FlxColor.WHITE, XZ);
+				var ceiling = makeQuad(-wallSize, wallSize, -wallSize, wallSize * 2, wallSize * 2, FlxColor.GRAY, XZ);
 				ceiling.raytracingProperties = {
 					reflectiveness: 0,
 					isEmitter: false,
@@ -145,7 +146,7 @@ class PlayState extends FlxState
 					lightPower: 0,
 					lightPointers: []
 				}
-				var backWall = makeQuad(-wallSize, -wallSize, -wallSize, wallSize * 2, wallSize * 2, FlxColor.WHITE, XY);
+				var backWall = makeQuad(-wallSize, -wallSize, -wallSize, wallSize * 2, wallSize * 2, FlxColor.GRAY, XY);
 				backWall.raytracingProperties = {
 					reflectiveness: 0,
 					isEmitter: false,
@@ -210,6 +211,68 @@ class PlayState extends FlxState
 					]
 				};
 				view.pushMesh(new Mesh(0, 0, 1, [light]));
+			case TEXTURE_TEST:
+				var part1 = new MeshPart(new Vector<Vector3D>(), new Vector<Int>(), new Vector<Float>(), new Vector<Vector3D>(), 'assets/images/breh.png');
+				part1.raytracingProperties = {
+					reflectiveness: 0,
+					isEmitter: false,
+					lightColor: FlxColor.BLACK,
+					lightPower: 0,
+					lightPointers: []
+				};
+				part1.vertices.push(new Vector3D(-50, -50, 0));
+				part1.vertices.push(new Vector3D(50, -50, 0));
+				part1.vertices.push(new Vector3D(0, 50, 0));
+
+				part1.normals.push(new Vector3D(0, 0, 1));
+				part1.normals.push(new Vector3D(0, 0, 1));
+				part1.normals.push(new Vector3D(0, 0, 1));
+
+				part1.indices.push(0);
+				part1.indices.push(1);
+				part1.indices.push(2);
+
+				part1.uvs.push(0);
+				part1.uvs.push(0);
+				part1.uvs.push(1);
+				part1.uvs.push(0);
+				part1.uvs.push(0.5);
+				part1.uvs.push(1);
+
+				var mesh1 = new Mesh(0, 0, -200, [part1]);
+
+				view.pushMesh(mesh1);
+
+				var part2 = new MeshPart(new Vector<Vector3D>(), new Vector<Int>(), new Vector<Float>(), new Vector<Vector3D>(), 'assets/images/minion.jpg');
+				part2.raytracingProperties = {
+					reflectiveness: 0,
+					isEmitter: true,
+					lightColor: FlxColor.WHITE,
+					lightPower: 50,
+					lightPointers: []
+				};
+				part2.vertices.push(new Vector3D(-50, -50, 0));
+				part2.vertices.push(new Vector3D(50, -50, 0));
+				part2.vertices.push(new Vector3D(0, 50, 0));
+
+				part2.normals.push(new Vector3D(0, 0, 1));
+				part2.normals.push(new Vector3D(0, 0, 1));
+				part2.normals.push(new Vector3D(0, 0, 1));
+
+				part2.indices.push(0);
+				part2.indices.push(1);
+				part2.indices.push(2);
+
+				part2.uvs.push(0);
+				part2.uvs.push(0);
+				part2.uvs.push(1);
+				part2.uvs.push(0);
+				part2.uvs.push(0.5);
+				part2.uvs.push(1);
+
+				var mesh2 = new Mesh(0, -30, -300, [part2]);
+
+				view.pushMesh(mesh2);
 		}
 		return val;
 	}
@@ -263,7 +326,7 @@ class PlayState extends FlxState
 		cam.bgColor.alpha = 0;
 		FlxG.cameras.add(cam, false);
 		controls.camera = cam;
-		scene = CORNELL_BOX;
+		scene = TEXTURE_TEST;
 	}
 
 	function createSphereMesh(x:Float, y:Float, z:Float, radius:Float, color:Int, latSteps:Int = 6, lonSteps:Int = 6):MeshPart

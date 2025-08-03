@@ -6,14 +6,16 @@ import nebula.mesh.*;
 import nebula.view.renderers.ViewRenderer;
 import openfl.Vector;
 import openfl.geom.Vector3D;
-import sys.thread.Thread;
 
 typedef ClippingVertex =
 {
 	var pos:Vector3D;
 	var u:Float;
 	var v:Float;
-	var invZ:Float;
+	var oneOverZ:Float;
+	var uOverZ:Float;
+	var vOverZ:Float;
+	var normal:Vector3D;
 	var meshPart:MeshPart;
 }
 
@@ -31,7 +33,7 @@ class N3DView extends FlxBasic
 	public var meshes:Array<Mesh> = [];
 	public var camSpaceTris:Array<Array<ClippingVertex>> = [];
 	public var fov:Float;
-	public var nearPlane:Float = 1;
+	public var nearPlane:Float = 0.1;
 	public var farPlane:Float = 100000;
 	public var aspect:Float = 1;
 	public var camX:Float = 0;
@@ -239,12 +241,29 @@ class N3DView extends FlxBasic
 
 				var indices = meshPart.indices;
 				var verts = meshPart.vertices;
+				var normals = meshPart.normals;
+				var uvs = meshPart.uvs;
 
 				for (i in 0...cast indices.length / 3)
 				{
 					var idx0 = indices[i * 3];
 					var idx1 = indices[i * 3 + 1];
 					var idx2 = indices[i * 3 + 2];
+
+					var n0 = normals[idx0];
+					var n1 = normals[idx1];
+					var n2 = normals[idx2];
+
+					var uv0u = uvs[idx0 * 2];
+					var uv0v = uvs[idx0 * 2 + 1];
+					var uv1u = uvs[idx1 * 2];
+					var uv1v = uvs[idx1 * 2 + 1];
+					var uv2u = uvs[idx2 * 2];
+					var uv2v = uvs[idx2 * 2 + 1];
+
+					var uv0 = {u: uv0u, v: uv0v};
+					var uv1 = {u: uv1u, v: uv1v};
+					var uv2 = {u: uv2u, v: uv2v};
 
 					var local0 = new Vector3D(verts[idx0].x - cx, verts[idx0].y - cy, verts[idx0].z - cz);
 					var local1 = new Vector3D(verts[idx1].x - cx, verts[idx1].y - cy, verts[idx1].z - cz);
@@ -292,56 +311,66 @@ class N3DView extends FlxBasic
 
 					var v0:ClippingVertex = {
 						pos: new Vector3D(camSpace0.x, camSpace0.y, camSpace0.z, 1),
-						u: meshPart.uvt[idx0 * 2],
-						v: meshPart.uvt[idx0 * 2 + 1],
-						invZ: 1 / -camSpace0.z,
+						u: uv0.u,
+						v: uv0.v,
+						oneOverZ: 1.0 / camSpace0.z,
+						uOverZ: uv0.u * (1.0 / camSpace0.z),
+						vOverZ: uv0.v * (1.0 / camSpace0.z),
+						normal: new Vector3D(n0.x, n0.y, n0.z),
 						meshPart: meshPart
 					};
 					var v1:ClippingVertex = {
 						pos: new Vector3D(camSpace1.x, camSpace1.y, camSpace1.z, 1),
-						u: meshPart.uvt[idx1 * 2],
-						v: meshPart.uvt[idx1 * 2 + 1],
-						invZ: 1 / -camSpace1.z,
+						u: uv1.u,
+						v: uv1.v,
+						oneOverZ: 1.0 / camSpace1.z,
+						uOverZ: uv1.u * (1.0 / camSpace1.z),
+						vOverZ: uv1.v * (1.0 / camSpace1.z),
+						normal: new Vector3D(n1.x, n1.y, n1.z),
 						meshPart: meshPart
 					};
 					var v2:ClippingVertex = {
 						pos: new Vector3D(camSpace2.x, camSpace2.y, camSpace2.z, 1),
-						u: meshPart.uvt[idx2 * 2],
-						v: meshPart.uvt[idx2 * 2 + 1],
-						invZ: 1 / -camSpace2.z,
+						u: uv2.u,
+						v: uv2.v,
+						oneOverZ: 1.0 / camSpace2.z,
+						uOverZ: uv2.u * (1.0 / camSpace2.z),
+						vOverZ: uv2.v * (1.0 / camSpace2.z),
+						normal: new Vector3D(n2.x, n2.y, n2.z),
 						meshPart: meshPart
 					};
 
-					var triangle = [v0, v1, v2];
-					camSpaceTris.push(triangle);
-					var skip = false;
-					for (i in 0...3) // URGENT: implement proper vertex clipping
-					{
-						var projected = project(triangle[i].pos);
-						if (triangle[i].pos.z > -50 || projected[3] < 0.01)
-						{
-							skip = true;
-							break;
-						}
-					}
-					if (skip)
+					var triangles = clipTriangleToFrustum(v0, v1, v2);
+					for (triangle in triangles)
+						camSpaceTris.push(triangle);
+					if (triangles.length == 0)
 						continue;
 
-					var baseIdx = Std.int(pm.verts.length / 2);
-					for (i in 0...3)
+					for (triangle in triangles)
 					{
-						var cv:ClippingVertex = triangle[i];
-						if (cv.pos.z > -nearPlane)
-							cv.pos.z = -nearPlane - 0.001;
-						var p = project(cv.pos);
+						var baseIdx = Std.int(pm.verts.length / 2);
+						for (i in 0...3)
+						{
+							var cv:ClippingVertex = triangle[i];
+							if (cv.pos.z > -nearPlane)
+								cv.pos.z = -nearPlane - 0.001;
+							var p = project(cv.pos);
 
-						pm.verts.push(p[0]);
-						pm.verts.push(p[1]);
-						pm.uvt.push(cv.u);
-						pm.uvt.push(cv.v);
-						pm.uvt.push(1);
+							pm.verts.push(p[0]);
+							pm.verts.push(p[1]);
+							var u = cv.uOverZ / cv.oneOverZ;
+							var v = cv.vOverZ / cv.oneOverZ;
+							// var w = 1.0 / cv.oneOverZ;
+							pm.uvt.push(-cv.uOverZ);
+							pm.uvt.push(-cv.vOverZ);
+							pm.uvt.push(-cv.oneOverZ);
+							trace("-uOverZ: " + -cv.uOverZ + " -vOverZ: " + -cv.vOverZ + " -oneOverZ: " + -cv.oneOverZ);
+							// pm.uvt.push(cv.u);
+							// pm.uvt.push(cv.v);
+							// pm.uvt.push(1);
 
-						pm.indices.push(baseIdx + i);
+							pm.indices.push(baseIdx + i);
+						}
 					}
 				}
 
@@ -350,6 +379,203 @@ class N3DView extends FlxBasic
 		}
 		if (render)
 			renderView(elapsed);
+	}
+
+	function clipTriangleToFrustum(v0:ClippingVertex, v1:ClippingVertex, v2:ClippingVertex):Array<Array<ClippingVertex>>
+	{
+		var aspectRatio = width / height;
+		var halfFOVRad = Math.PI * fov / 360;
+		var tanHalfFOV = Math.tan(halfFOVRad);
+		var planes = [
+			{
+				name: "near",
+				test: function(v:ClippingVertex):Bool return v.pos.z <= -nearPlane,
+				clip: function(a:ClippingVertex, b:ClippingVertex):ClippingVertex
+				{
+					var t = (-nearPlane - a.pos.z) / (b.pos.z - a.pos.z);
+					return {
+						pos: new Vector3D(a.pos.x + (b.pos.x - a.pos.x) * t, a.pos.y + (b.pos.y - a.pos.y) * t, -nearPlane),
+						u: a.u + (b.u - a.u) * t,
+						v: a.v + (b.v - a.v) * t,
+						oneOverZ: a.oneOverZ + (b.oneOverZ - a.oneOverZ) * t,
+						uOverZ: a.uOverZ + (b.uOverZ - a.uOverZ) * t,
+						vOverZ: a.vOverZ + (b.vOverZ - a.vOverZ) * t,
+						normal: new Vector3D(a.normal.x
+							+ (b.normal.x - a.normal.x) * t, a.normal.y
+							+ (b.normal.y - a.normal.y) * t,
+							a.normal.z
+							+ (b.normal.z - a.normal.z) * t),
+						meshPart: a.meshPart
+					};
+				}
+			},
+			{
+				name: "left",
+				test: function(v:ClippingVertex):Bool return v.pos.x >= v.pos.z * tanHalfFOV * aspectRatio,
+				clip: function(a:ClippingVertex, b:ClippingVertex):ClippingVertex
+				{
+					var ax = a.pos.x, az = a.pos.z;
+					var bx = b.pos.x, bz = b.pos.z;
+					var planeX = -tanHalfFOV * aspectRatio;
+
+					var t = -(ax + planeX * az) / ((bx - ax) + planeX * (bz - az));
+					var pos = new Vector3D(ax + (bx - ax) * t, a.pos.y + (b.pos.y - a.pos.y) * t, az + (bz - az) * t);
+					return {
+						pos: pos,
+						u: a.u + (b.u - a.u) * t,
+						v: a.v + (b.v - a.v) * t,
+						oneOverZ: a.oneOverZ + (b.oneOverZ - a.oneOverZ) * t,
+						uOverZ: a.uOverZ + (b.uOverZ - a.uOverZ) * t,
+						vOverZ: a.vOverZ + (b.vOverZ - a.vOverZ) * t,
+						normal: new Vector3D(a.normal.x
+							+ (b.normal.x - a.normal.x) * t, a.normal.y
+							+ (b.normal.y - a.normal.y) * t,
+							a.normal.z
+							+ (b.normal.z - a.normal.z) * t),
+						meshPart: a.meshPart
+					};
+				}
+			},
+			{
+				name: "right",
+				test: function(v:ClippingVertex):Bool return v.pos.x <= -v.pos.z * tanHalfFOV * aspectRatio,
+				clip: function(a:ClippingVertex, b:ClippingVertex):ClippingVertex
+				{
+					var ax = a.pos.x, az = a.pos.z;
+					var bx = b.pos.x, bz = b.pos.z;
+					var planeX = tanHalfFOV * aspectRatio;
+
+					var t = -(ax + planeX * az) / ((bx - ax) + planeX * (bz - az));
+					var pos = new Vector3D(ax + (bx - ax) * t, a.pos.y + (b.pos.y - a.pos.y) * t, az + (bz - az) * t);
+					return {
+						pos: pos,
+						u: a.u + (b.u - a.u) * t,
+						v: a.v + (b.v - a.v) * t,
+						oneOverZ: a.oneOverZ + (b.oneOverZ - a.oneOverZ) * t,
+						uOverZ: a.uOverZ + (b.uOverZ - a.uOverZ) * t,
+						vOverZ: a.vOverZ + (b.vOverZ - a.vOverZ) * t,
+						normal: new Vector3D(a.normal.x
+							+ (b.normal.x - a.normal.x) * t, a.normal.y
+							+ (b.normal.y - a.normal.y) * t,
+							a.normal.z
+							+ (b.normal.z - a.normal.z) * t),
+						meshPart: a.meshPart
+					};
+				}
+			},
+			{
+				name: "top",
+				test: function(v:ClippingVertex):Bool return v.pos.y <= -v.pos.z * tanHalfFOV,
+				clip: function(a:ClippingVertex, b:ClippingVertex):ClippingVertex
+				{
+					var ay = a.pos.y, az = a.pos.z;
+					var by = b.pos.y, bz = b.pos.z;
+					var planeY = -tanHalfFOV;
+
+					var t = (planeY * az - ay) / ((by - ay) - (bz - az) * planeY);
+					var pos = new Vector3D(a.pos.x + (b.pos.x - a.pos.x) * t, ay + (by - ay) * t, az + (bz - az) * t);
+					return {
+						pos: pos,
+						u: a.u + (b.u - a.u) * t,
+						v: a.v + (b.v - a.v) * t,
+						oneOverZ: a.oneOverZ + (b.oneOverZ - a.oneOverZ) * t,
+						uOverZ: a.uOverZ + (b.uOverZ - a.uOverZ) * t,
+						vOverZ: a.vOverZ + (b.vOverZ - a.vOverZ) * t,
+						normal: new Vector3D(a.normal.x
+							+ (b.normal.x - a.normal.x) * t, a.normal.y
+							+ (b.normal.y - a.normal.y) * t,
+							a.normal.z
+							+ (b.normal.z - a.normal.z) * t),
+						meshPart: a.meshPart
+					};
+				}
+			},
+			{
+				name: "bottom",
+				test: function(v:ClippingVertex):Bool return v.pos.y >= v.pos.z * tanHalfFOV,
+				clip: function(a:ClippingVertex, b:ClippingVertex):ClippingVertex
+				{
+					var ay = a.pos.y, az = a.pos.z;
+					var by = b.pos.y, bz = b.pos.z;
+					var planeY = tanHalfFOV;
+
+					var t = (planeY * az - ay) / ((by - ay) - (bz - az) * planeY);
+					var pos = new Vector3D(a.pos.x + (b.pos.x - a.pos.x) * t, ay + (by - ay) * t, az + (bz - az) * t);
+					return {
+						pos: pos,
+						u: a.u + (b.u - a.u) * t,
+						v: a.v + (b.v - a.v) * t,
+						oneOverZ: a.oneOverZ + (b.oneOverZ - a.oneOverZ) * t,
+						uOverZ: a.uOverZ + (b.uOverZ - a.uOverZ) * t,
+						vOverZ: a.vOverZ + (b.vOverZ - a.vOverZ) * t,
+						normal: new Vector3D(a.normal.x
+							+ (b.normal.x - a.normal.x) * t, a.normal.y
+							+ (b.normal.y - a.normal.y) * t,
+							a.normal.z
+							+ (b.normal.z - a.normal.z) * t),
+						meshPart: a.meshPart
+					};
+				}
+			}
+		];
+
+		function clipAgainstPlane(tri:Array<ClippingVertex>, plane):Array<Array<ClippingVertex>>
+		{
+			var inside:Array<ClippingVertex> = [];
+			var outside:Array<ClippingVertex> = [];
+
+			for (v in tri)
+			{
+				if (plane.test(v))
+					inside.push(v);
+				else
+					outside.push(v);
+			}
+
+			if (inside.length == 0)
+				return [];
+
+			if (inside.length == 3)
+				return [tri];
+
+			inline function lerp(a:ClippingVertex, b:ClippingVertex):ClippingVertex
+			{
+				return plane.clip(a, b);
+			}
+
+			if (inside.length == 1)
+			{
+				var a = inside[0];
+				var b = lerp(a, outside[0]);
+				var c = lerp(a, outside[1]);
+				return [[a, b, c]];
+			}
+			else if (inside.length == 2)
+			{
+				var a = inside[0], b = inside[1];
+				var p1 = lerp(a, outside[0]);
+				var p2 = lerp(b, outside[0]);
+				return [[a, b, p2], [a, p2, p1]];
+			}
+
+			return [];
+		}
+
+		var triangles:Array<Array<ClippingVertex>> = [[v0, v1, v2]];
+
+		for (plane in planes)
+		{
+			var newTriangles:Array<Array<ClippingVertex>> = [];
+			for (tri in triangles)
+			{
+				newTriangles = newTriangles.concat(clipAgainstPlane(tri, plane));
+			}
+			triangles = newTriangles;
+			if (triangles.length == 0)
+				return [];
+		}
+
+		return triangles;
 	}
 
 	public function renderView(elapsed:Float)
