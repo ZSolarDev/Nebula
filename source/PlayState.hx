@@ -5,6 +5,7 @@ import flixel.text.FlxText;
 import flixel.util.FlxColor;
 import haxe.Timer;
 import nebula.mesh.*;
+import nebula.utils.Vec3DHelper;
 import nebula.view.*;
 import nebula.view.renderers.*;
 import nebulatracer.native.Embree;
@@ -61,7 +62,6 @@ class PlayState extends FlxState
 				var floorParts = createCheckerFloor(8, 40);
 				view.pushMesh(new Mesh(0, 0, 0, floorParts));
 
-				// Spheres
 				var radius = 20;
 				var redSphere = createSphereMesh(-80, -radius, 20, radius, FlxColor.RED, sphereDetail, sphereDetail);
 				redSphere.raytracingProperties = {
@@ -90,7 +90,6 @@ class PlayState extends FlxState
 
 				view.pushMesh(new Mesh(0, 0, 0, [redSphere, greenSphere, blueSphere]));
 
-				// Sun sphere
 				var sun = createSphereMesh(0, -150, -150, 30, FlxColor.YELLOW, sphereDetail, sphereDetail);
 				sun.raytracingProperties = {
 					reflectiveness: 0,
@@ -120,7 +119,7 @@ class PlayState extends FlxState
 				};
 				view.pushMesh(new Mesh(0, 0, 0, [sun, otherSun]));
 			case CORNELL_BOX:
-				var sphereDetail = 20;
+				var sphereDetail = 30;
 
 				view.camX = 0;
 				view.camY = 0;
@@ -320,7 +319,7 @@ class PlayState extends FlxState
 			view = new N3DView(FlxG.width, FlxG.height, Raytracer);
 			add(view);
 			cpuRaytracer = cast view.renderer;
-			cpuRaytracer.giRes = 8;
+			cpuRaytracer.resolution = 8;
 		}
 		cam = new FlxCamera(0, 0, FlxG.width, FlxG.height);
 		cam.bgColor.alpha = 0;
@@ -415,6 +414,18 @@ class PlayState extends FlxState
 		part.vertices.push(v3);
 		part.vertices.push(v4);
 
+		var edge1 = v2.subtract(v1);
+		var edge2 = v3.subtract(v1);
+		var normal = Vec3DHelper.normalize(Vec3DHelper.cross(edge1, edge2));
+
+		if (backFace)
+			normal = Vec3DHelper.multiplyScalar(normal, -1);
+
+		part.normals.push(normal);
+		part.normals.push(normal);
+		part.normals.push(normal);
+		part.normals.push(normal);
+
 		if (backFace)
 		{
 			part.indices.push(0);
@@ -423,8 +434,6 @@ class PlayState extends FlxState
 			part.indices.push(0);
 			part.indices.push(3);
 			part.indices.push(2);
-
-			part.normals.push(new Vector3D(0, 0, 1));
 		}
 		else
 		{
@@ -434,8 +443,6 @@ class PlayState extends FlxState
 			part.indices.push(0);
 			part.indices.push(2);
 			part.indices.push(3);
-
-			part.normals.push(new Vector3D(0, 0, -1));
 		}
 
 		return part;
@@ -469,15 +476,18 @@ class PlayState extends FlxState
 				part.vertices.push(new Vector3D(x + tileSize, 0, y + tileSize));
 				part.vertices.push(new Vector3D(x, 0, y + tileSize));
 
-				// Two triangles
+				var normal = new Vector3D(0, 1, 0);
+				part.normals.push(normal);
+				part.normals.push(normal);
+				part.normals.push(normal);
+				part.normals.push(normal);
+
 				part.indices.push(0);
 				part.indices.push(1);
 				part.indices.push(2);
 				part.indices.push(0);
 				part.indices.push(2);
 				part.indices.push(3);
-
-				part.normals.push(new Vector3D(0, 1, 0));
 
 				parts.push(part);
 			}
@@ -521,7 +531,7 @@ class PlayState extends FlxState
 			var threaded = true;
 			if (FlxG.keys.justPressed.ENTER)
 			{
-				cpuRaytracer.globalIllum.visible = true;
+				cpuRaytracer.targetTex.visible = true;
 				if (threaded)
 					Thread.create(() ->
 					{
@@ -534,7 +544,7 @@ class PlayState extends FlxState
 					cpuRaytracer.renderScene();
 			}
 			if (FlxG.keys.justPressed.ESCAPE)
-				cpuRaytracer.globalIllum.visible = false;
+				cpuRaytracer.targetTex.visible = false;
 			if (FlxG.keys.justPressed.BACKSPACE)
 			{
 				view.render = !view.render;
@@ -545,9 +555,9 @@ class PlayState extends FlxState
 		else if (FlxG.keys.justPressed.R && cpuRaytracer.rendering)
 			trace('Rendering, please wait for it to finish before switching modes.');
 		if (FlxG.keys.justPressed.MINUS && !separated)
-			cpuRaytracer.giRes -= 1;
+			cpuRaytracer.resolution -= 1;
 		if (FlxG.keys.justPressed.PLUS && !separated)
-			cpuRaytracer.giRes += 1;
+			cpuRaytracer.resolution += 1;
 
 		if (FlxG.keys.justPressed.J)
 			scene = cast(cast(scene, Int) + 1) % maxScenes;

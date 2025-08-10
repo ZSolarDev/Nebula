@@ -19,13 +19,6 @@ typedef ClippingVertex =
 	var meshPart:MeshPart;
 }
 
-typedef TransformedMesh =
-{
-	var mesh:MeshPart;
-	var verts:Vector<Float>;
-	var indices:Vector<Int>;
-}
-
 class N3DView extends FlxBasic
 {
 	public var renderer:ViewRenderer;
@@ -83,8 +76,9 @@ class N3DView extends FlxBasic
 		// Convert NDC to screen space
 		var sx = (px + 1) * 0.5 * width;
 		var sy = (py + 1) * 0.5 * height;
+		var sz = (pz + 1) * 0.5;
 
-		return new Vector(4, false, [sx, sy, pz, pw]);
+		return new Vector(4, false, [sx, sy, sz, pw]);
 	}
 
 	function get_projectionMatrix():Array<Float>
@@ -234,6 +228,7 @@ class N3DView extends FlxBasic
 					mesh: meshPart,
 					meshPos: new Vector3D(mesh.x, mesh.y, mesh.z),
 					verts: new Vector<Float>(),
+					verts3d: [],
 					uvt: new Vector<Float>(),
 					indices: new Vector<Int>(),
 					camZ: camSpaceCenter.z
@@ -358,13 +353,13 @@ class N3DView extends FlxBasic
 
 							pm.verts.push(p[0]);
 							pm.verts.push(p[1]);
+							pm.verts3d.push(new Vector3D(p[0], p[1], p[2]));
 							var u = cv.uOverZ / cv.oneOverZ;
 							var v = cv.vOverZ / cv.oneOverZ;
-							// var w = 1.0 / cv.oneOverZ;
-							pm.uvt.push(-cv.uOverZ);
-							pm.uvt.push(-cv.vOverZ);
-							pm.uvt.push(-cv.oneOverZ);
-							trace("-uOverZ: " + -cv.uOverZ + " -vOverZ: " + -cv.vOverZ + " -oneOverZ: " + -cv.oneOverZ);
+							var w = 1.0 / cv.oneOverZ;
+							pm.uvt.push(cv.u);
+							pm.uvt.push(cv.v);
+							pm.uvt.push(1);
 							// pm.uvt.push(cv.u);
 							// pm.uvt.push(cv.v);
 							// pm.uvt.push(1);

@@ -6,6 +6,7 @@ import flixel.math.FlxPoint;
 import nebula.mesh.Mesh;
 import nebula.mesh.ProjectionMesh;
 import nebula.view.N3DView.ClippingVertex;
+import openfl.Vector;
 import openfl.display.Bitmap;
 import openfl.display.BitmapData;
 

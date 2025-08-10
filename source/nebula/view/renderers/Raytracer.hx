@@ -38,8 +38,8 @@ class Raytracer implements ViewRenderer extends FlxCamera
 {
 	public var mutex:Mutex = new Mutex();
 	public var raytracer:NebulaTracer;
-	public var globalIllum:FlxSprite;
-	public var giRes:Int = 1;
+	public var targetTex:FlxSprite;
+	public var resolution:Int = 1;
 	public var prog:Int;
 	public var maxProg:Int;
 	public var view:N3DView;
@@ -52,20 +52,18 @@ class Raytracer implements ViewRenderer extends FlxCamera
 	public var tonemapper:Tonemapper = new ClampTonemapper();
 	public var hemisphereRandomness = 0.1;
 	public var shadowsRandomness = 0.1;
+	public var bounceLighting:Bool = true;
+	public var maxBounceInfluence:Float = 1.0;
 
 	public function new(view:N3DView)
 	{
-		super();
 		super(0, 0, view.width, view.height);
 		this.view = view;
-		// FlxG.cameras.reset(this);
 		FlxG.state.add(this);
-		// var bg = new FlxSprite(0, 0, FlxGraphic.fromBitmapData(new BitmapData(view.width, view.height, true, 0xFF00D9FF)));
-		// bg.camera = this;
 		bgColor.alpha = 0;
-		globalIllum = new FlxSprite();
-		globalIllum.makeGraphic(view.width, view.height, skyColor);
-		FlxG.state.add(globalIllum);
+		targetTex = new FlxSprite();
+		targetTex.makeGraphic(view.width, view.height, skyColor);
+		FlxG.state.add(targetTex);
 		raytracer = new NebulaTracer();
 	}
 
@@ -186,7 +184,6 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		var yaw = view.camYaw;
 		var pitch = view.camPitch;
 
-		// --- Apply Pitch (X axis) ---
 		var cosPitch = Math.cos(pitch);
 		var sinPitch = Math.sin(pitch);
 
@@ -194,7 +191,6 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		var z1 = dir.y * sinPitch + dir.z * cosPitch;
 		var x1 = dir.x;
 
-		// --- Apply Yaw (Y axis) after pitch ---
 		var cosYaw = Math.cos(yaw);
 		var sinYaw = Math.sin(yaw);
 
@@ -236,13 +232,15 @@ class Raytracer implements ViewRenderer extends FlxCamera
 			var x_base = Math.cos(phi_base) * r_base;
 			var z_base = Math.sin(phi_base) * r_base;
 
-			var u = Math.random();
-			var v = Math.random();
-			var theta = 2.0 * Math.PI * u;
-			var y_rand = v;
-			var r_rand = Math.sqrt(1.0 - y_rand * y_rand);
-			var x_rand = Math.cos(theta) * r_rand;
-			var z_rand = Math.sin(theta) * r_rand;
+			var u1 = Math.random();
+			var u2 = Math.random();
+
+			var r_rand = Math.sqrt(u1);
+			var theta_rand = 2.0 * Math.PI * u2;
+
+			var x_rand = r_rand * Math.cos(theta_rand);
+			var z_rand = r_rand * Math.sin(theta_rand);
+			var y_rand = Math.sqrt(1.0 - u1);
 
 			var x = x_base * (1.0 - hemisphereRandomness) + x_rand * hemisphereRandomness;
 			var y = y_base * (1.0 - hemisphereRandomness) + y_rand * hemisphereRandomness;
@@ -253,6 +251,51 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		}
 
 		return samples;
+	}
+
+	static function barycentric(v0:Vector3D, v1:Vector3D, v2:Vector3D, p:Vector3D):{u:Float, v:Float, w:Float}
+	{
+		var v0v1 = Vec3DHelper.subtract(v1, v0);
+		var v0v2 = Vec3DHelper.subtract(v2, v0);
+		var v0p = Vec3DHelper.subtract(p, v0);
+
+		var d00 = Vec3DHelper.dot(v0v1, v0v1);
+		var d01 = Vec3DHelper.dot(v0v1, v0v2);
+		var d11 = Vec3DHelper.dot(v0v2, v0v2);
+		var d20 = Vec3DHelper.dot(v0p, v0v1);
+		var d21 = Vec3DHelper.dot(v0p, v0v2);
+
+		var denom = d00 * d11 - d01 * d01;
+		if (denom == 0)
+			return {u: 0, v: 0, w: 0};
+
+		var v = (d11 * d20 - d01 * d21) / denom;
+		var w = (d00 * d21 - d01 * d20) / denom;
+		var u = 1 - v - w;
+
+		return {u: u, v: v, w: w};
+	}
+
+	static function getTriangleNormalInterpolated(part:MeshPart, primID:Int, hitPos:Vector3D):Vector3D
+	{
+		var i0 = part.indices[primID * 3];
+		var i1 = part.indices[primID * 3 + 1];
+		var i2 = part.indices[primID * 3 + 2];
+
+		var v0 = part.vertices[i0];
+		var v1 = part.vertices[i1];
+		var v2 = part.vertices[i2];
+
+		var bary = barycentric(v0, v1, v2, hitPos);
+
+		var n0 = part.normals[i0];
+		var n1 = part.normals[i1];
+		var n2 = part.normals[i2];
+
+		var interpolatedNormal = Vec3DHelper.add(Vec3DHelper.add(Vec3DHelper.multiplyScalar(n0, bary.u), Vec3DHelper.multiplyScalar(n1, bary.v)),
+			Vec3DHelper.multiplyScalar(n2, bary.w));
+
+		return Vec3DHelper.normalize(interpolatedNormal);
 	}
 
 	static function getTriangleNormal(part:MeshPart, primID:Int):Vector3D
@@ -283,10 +326,15 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		for (i in 0...sampleCount)
 		{
 			var detPhi = (i + 0.5) / sampleCount * Math.PI * 2;
-			var detCosTheta = 1 - (i + 0.5) / sampleCount * (1 - Math.cos(coneAngle));
+
+			var uDet = (i + 0.5) / sampleCount;
+			var cosCone = Math.cos(coneAngle);
+
+			var detCosTheta = Math.sqrt(1 - uDet * (1 - cosCone * cosCone));
 
 			var randPhi = Math.random() * Math.PI * 2;
-			var randCosTheta = 1 - Math.random() * (1 - Math.cos(coneAngle));
+			var randU = Math.random();
+			var randCosTheta = Math.sqrt(1 - randU * (1 - cosCone * cosCone));
 
 			var phi = detPhi * (1 - shadowsRandomness) + randPhi * shadowsRandomness;
 			var cosTheta = detCosTheta * (1 - shadowsRandomness) + randCosTheta * shadowsRandomness;
@@ -374,35 +422,50 @@ class Raytracer implements ViewRenderer extends FlxCamera
 						FloatColor.lerpColor(baseDarkened, FloatColor.fromFlxColor(light.meshPart.raytracingProperties.lightColor), lightIntensity));
 				}
 			}
-			var hemisphereSamples = generateHemisphereSamples(32);
-
-			var colors = [];
-			for (sample in hemisphereSamples)
+			if (bounceLighting)
 			{
-				var normal = getTriangleNormal(part, res.primID);
-				var sampleDir = alignSampleToNormal(sample, normal);
+				var hemisphereSamples = generateHemisphereSamples(32);
 
-				var bounceRay:Ray = {
-					pos: Vec3DHelper.add(hitPos, Vec3DHelper.multiplyScalar(sampleDir, 0.001)),
-					dir: sampleDir
-				};
+				var colors = [];
+				for (sample in hemisphereSamples)
+				{
+					var hitPos = Vec3DHelper.add(ray.pos, Vec3DHelper.multiplyScalar(ray.dir, res.distance));
+					var normal = getTriangleNormalInterpolated(part, res.primID, hitPos);
+					// var normal = getTriangleNormal(part, res.primID);
+					var sampleDir = alignSampleToNormal(sample, normal);
 
-				var bounceRes = raytracer.traceRay(bounceRay);
-				if (bounceRes.hit)
-				{
-					var bouncePart = geom[bounceRes.geomID];
-					colors.push(bouncePart._color);
+					var bounceRay:Ray = {
+						pos: Vec3DHelper.add(hitPos, Vec3DHelper.multiplyScalar(sampleDir, 0.001)),
+						dir: sampleDir
+					};
+
+					var bounceRes = raytracer.traceRay(bounceRay);
+					if (bounceRes.hit)
+					{
+						var bouncePart = geom[bounceRes.geomID];
+						// its odd when grey blends a lot with something saturated
+						var remappedSaturation = 0.6 + (rgbToSaturation(bouncePart._color.red, bouncePart._color.green, bouncePart._color.blue) * 0.4);
+						colors.push(FloatColor.multiplyFloat(bouncePart._color, remappedSaturation));
+					}
+					else
+					{
+						var ndotl = Math.max(0, Vec3DHelper.dot(sampleDir, normal));
+						var remappedSaturation = 0.6 + (rgbToSaturation(skyColor.red, skyColor.green, skyColor.blue) * 0.4);
+						var envLight = FloatColor.multiplyFloat(FloatColor.multiplyFloat(FloatColor.fromFlxColor(skyColor), ndotl * 0.3), remappedSaturation);
+						colors.push(envLight);
+					}
 				}
-				else
-				{
-					var ndotl = Math.max(0, Vec3DHelper.dot(sampleDir, normal));
-					var envLight = FloatColor.multiplyFloat(FloatColor.fromFlxColor(skyColor), ndotl * 0.3);
-					colors.push(envLight);
-				}
+
+				var bounceLight = averageColors(colors);
+				var brightness = 0.3 * color.red + 0.59 * color.green + 0.11 * color.blue;
+
+				// remap brightness from [0..1] to [0.6..1]
+				var scale = 0.6 + 0.4 * brightness; // 0.6 + (1-0.6)*brightness
+
+				color.red = Math.min(color.red + bounceLight.red * scale * maxBounceInfluence, 1.0);
+				color.green = Math.min(color.green + bounceLight.green * scale * maxBounceInfluence, 1.0);
+				color.blue = Math.min(color.blue + bounceLight.blue * scale * maxBounceInfluence, 1.0);
 			}
-
-			var bounceLight = averageColors(colors);
-			color = FloatColor.addColor(color, bounceLight);
 
 			return {hit: true, color: color};
 		}
@@ -469,7 +532,7 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		rendering = true;
 		geom = [];
 		lights = [];
-		globalIllum.pixels.fillRect(new Rectangle(0, 0, view.width, view.height), skyColor);
+		targetTex.pixels.fillRect(new Rectangle(0, 0, view.width, view.height), skyColor);
 
 		for (mesh in view.meshes)
 		{
@@ -511,12 +574,12 @@ class Raytracer implements ViewRenderer extends FlxCamera
 		{
 			for (y in 0...view.height)
 			{
-				if (y % giRes != 0)
+				if (y % resolution != 0)
 					continue;
 
 				for (x in 0...view.width)
 				{
-					if (x % giRes != 0)
+					if (x % resolution != 0)
 						continue;
 
 					var ray = pixelToWorld(x, y);
@@ -524,7 +587,7 @@ class Raytracer implements ViewRenderer extends FlxCamera
 					var color = res.color;
 					var finalColor = tonemapper.map(color);
 					finalColor.alpha = 255;
-					globalIllum.pixels.fillRect(new Rectangle(x, y, giRes, giRes), finalColor);
+					targetTex.pixels.fillRect(new Rectangle(x, y, resolution, resolution), finalColor);
 					prog++;
 				}
 			}
