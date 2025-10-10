@@ -1,4 +1,4 @@
-# Nebula
+# Nebula (DISCONTINIUED!)
 A 3D renderer for HaxeFlixel
 
 ## URGENT:
